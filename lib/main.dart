@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'features/splash/splash_screen.dart';
+import 'core/router/app_router.dart';
 
 void main() {
   runApp(const PharmaChainApp());
@@ -10,13 +10,13 @@ class PharmaChainApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
+    return MaterialApp.router(
       title: 'PharmaChain',
       theme: ThemeData(
         colorSchemeSeed: Colors.teal,
         useMaterial3: true,
       ),
-      home: const SplashScreen(),
+      routerConfig: appRouter,
       debugShowCheckedModeBanner: false,
     );
   }
