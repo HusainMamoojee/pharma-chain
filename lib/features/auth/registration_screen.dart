@@ -1,8 +1,10 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_text_styles.dart';
+import '../../services/auth_service.dart';
 
 class RegistrationScreen extends StatefulWidget {
   const RegistrationScreen({super.key});
@@ -17,6 +19,7 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
+  bool _isLoading = false;
 
   @override
   void dispose() {
@@ -27,12 +30,33 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
     super.dispose();
   }
 
-  void _handleRegister() {
-    if (_formKey.currentState!.validate()) {
-      // TODO: hook up to auth/user service once backend is ready
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Registration logic goes here')),
+  Future<void> _handleRegister() async {
+    if (!_formKey.currentState!.validate()) return;
+
+    setState(() => _isLoading = true);
+
+    try {
+      await AuthService().registerWithEmail(
+        email: _emailController.text.trim(),
+        password: _passwordController.text.trim(),
+        fullName: _nameController.text.trim(),
       );
+
+      if (!mounted) return;
+      context.go('/home');
+    } on FirebaseAuthException catch (e) {
+      String message = 'Registration failed. Please try again.';
+      if (e.code == 'email-already-in-use') {
+        message = 'An account already exists with that email.';
+      } else if (e.code == 'weak-password') {
+        message = 'Password is too weak.';
+      } else if (e.code == 'invalid-email') {
+        message = 'Please enter a valid email address.';
+      }
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -103,7 +127,10 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                                 constraints: const BoxConstraints(),
                               ),
                               const SizedBox(width: 8),
-                              Text('Create Account', style: AppTextStyles.headline.copyWith(fontSize: 22)),
+                              Text(
+                                'Create Account',
+                                style: AppTextStyles.headline.copyWith(fontSize: 22),
+                              ),
                             ],
                           ),
                           const SizedBox(height: 8),
@@ -146,13 +173,15 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                             obscureText: true,
                             decoration: _fieldDecoration('Confirm Password'),
                             validator: (value) {
-                              if (value != _passwordController.text) return 'Passwords do not match';
+                              if (value != _passwordController.text) {
+                                return 'Passwords do not match';
+                              }
                               return null;
                             },
                           ),
                           const SizedBox(height: 24),
                           ElevatedButton(
-                            onPressed: _handleRegister,
+                            onPressed: _isLoading ? null : _handleRegister,
                             style: ElevatedButton.styleFrom(
                               backgroundColor: AppColors.primary,
                               foregroundColor: Colors.white,
@@ -161,10 +190,19 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                                 borderRadius: BorderRadius.circular(14),
                               ),
                             ),
-                            child: Text(
-                              'Register',
-                              style: AppTextStyles.label.copyWith(color: Colors.white),
-                            ),
+                            child: _isLoading
+                                ? const SizedBox(
+                                    height: 20,
+                                    width: 20,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: Colors.white,
+                                    ),
+                                  )
+                                : Text(
+                                    'Register',
+                                    style: AppTextStyles.label.copyWith(color: Colors.white),
+                                  ),
                           ),
                         ],
                       ),
