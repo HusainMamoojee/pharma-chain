@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "277246561904",
+    "project_id": "pharma-chain-e4cc2",
+    "storage_bucket": "pharma-chain-e4cc2.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:277246561904:android:e5f3de42e9ba99c37e2eb5",
+        "android_client_info": {
+          "package_name": "com.example.pharma_chain_app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyByqEMdTh-SOd9iuuI_l7FVrTZ8GqKU1-I"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
