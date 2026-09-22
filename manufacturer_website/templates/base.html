@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{% block title %}Manufacturer Dashboard{% endblock %} · MedChain</title>
+
+  <!-- Font: Space Grotesk, as specified by Hussain -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+  <!-- CSS lives in its own file per Kayla's request -->
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+
+  <div class="app-shell">
+
+    <aside class="sidebar">
+      <div class="sidebar__brand">
+        <span class="sidebar__brand-mark">MedChain</span>
+        <span class="sidebar__brand-sub">Manufacturer</span>
+      </div>
+
+      <nav class="sidebar__nav">
+        <a href="{{ url_for('dashboard') }}" class="sidebar__link {{ 'is-active' if active_page == 'dashboard' }}">
+          Dashboard
+        </a>
+        <a href="{{ url_for('register') }}" class="sidebar__link {{ 'is-active' if active_page == 'register' }}">
+          Register product
+        </a>
+        <a href="{{ url_for('products') }}" class="sidebar__link {{ 'is-active' if active_page == 'products' }}">
+          My products
+        </a>
+      </nav>
+
+      {% if firebase_ready is defined and not firebase_ready %}
+      <div class="sidebar__notice">
+        Demo mode — not yet connected to Firestore.
+      </div>
+      {% endif %}
+    </aside>
+
+    <main class="main">
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+          <div class="flash-stack">
+            {% for category, message in messages %}
+              <div class="flash flash--{{ category }}">{{ message }}</div>
+            {% endfor %}
+          </div>
+        {% endif %}
+      {% endwith %}
+
+      {% block content %}{% endblock %}
+    </main>
+
+  </div>
+
+  <script src="{{ url_for('static', filename='js/script.js') }}"></script>
+</body>
+</html>
