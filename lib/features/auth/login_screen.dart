@@ -186,7 +186,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             ),
                             const SizedBox(height: 16),
                             TextButton(
-                              onPressed: () => context.go('/register'),
+                              onPressed: () => context.push('/register'),
                               child: Text(
                                 "Don't have an account? Register",
                                 style: AppTextStyles.label.copyWith(color: AppColors.primary),

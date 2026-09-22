@@ -5,11 +5,30 @@ import '../../features/auth/registration_screen.dart';
 import '../../features/onboarding/onboarding_screen.dart';
 import '../../features/selection/splash_selection_screen.dart';
 import '../../features/home/home_screen.dart';
-
+import '../../features/staff_auth/staff_login_screen.dart';
+import '../../features/staff_auth/staff_2fa_screen.dart';
+import '../../features/staff_auth/staff_dashboard_screen.dart';
 
 final GoRouter appRouter = GoRouter(
   initialLocation: '/',
   routes: [
+    GoRoute(
+      path: '/staff-login',
+      name: 'staffLogin',
+      builder: (context, state) => const StaffLoginScreen(),
+    ),
+
+    GoRoute(
+      path: '/staff-2fa',
+      name: 'staff2FA',
+      builder: (context, state) => const Staff2FAScreen(),
+    ),
+    GoRoute(
+      path: '/staff-dashboard',
+      name: 'staffDashboard',
+      builder: (context, state) => const StaffDashboardScreen(),
+    ),
+
     GoRoute(
       path: '/onboarding',
       name: 'onboarding',
@@ -31,11 +50,7 @@ final GoRouter appRouter = GoRouter(
       name: 'splashSelection',
       builder: (context, state) => const SplashSelectionScreen(),
     ),
-    GoRoute(
-  path: '/staff-login',
-  name: 'staffLogin',
-  builder: (context, state) => const LoginScreen(), // placeholder — see note below
-),
+  
 
     GoRoute(
       path: '/login',
@@ -47,6 +62,9 @@ final GoRouter appRouter = GoRouter(
       name: 'register',
       builder: (context, state) => const RegistrationScreen(),
     ),
+
+
+
 
     // --- Placeholder routes for screens not yet built ---
     // Uncomment and point to the real screen as each one gets built.
