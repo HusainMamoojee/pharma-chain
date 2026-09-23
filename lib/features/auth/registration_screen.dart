@@ -40,6 +40,7 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
         email: _emailController.text.trim(),
         password: _passwordController.text.trim(),
         fullName: _nameController.text.trim(),
+        role: 'patient', // default role for regular sign-up as staff acess is assigned by admin
       );
 
       if (!mounted) return;
