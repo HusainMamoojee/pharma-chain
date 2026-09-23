@@ -32,13 +32,30 @@ class _StaffLoginScreenState extends State<StaffLoginScreen> {
     setState(() => _isLoading = true);
 
     try {
-      await AuthService().loginWithEmail(
+      final user = await AuthService().loginWithEmail(
         email: _emailController.text.trim(),
-        password: _passwordController.text.trim(),
+        password: _passwordController.text.trim()
       );
 
+      if(user == null) {
+        throw Exception('User not found');
+      }
+
+      final role = await AuthService().getUserRole(user.uid);
+
+
+      if(role != "staff" && role != "admin") {
+        //not authorized
+        await AuthService().signOut();
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('This account does not have staff access.')),
+        );
+        return;
+      }
+
+
       if (!mounted) return;
-      // TODO: verify this user actually has a staff/admin role before allowing 2FA
       context.go('/staff-2fa');
     } on FirebaseAuthException catch (e) {
       String message = 'Login failed. Please try again.';
