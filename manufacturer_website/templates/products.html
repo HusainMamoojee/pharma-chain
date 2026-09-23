@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}My products{% endblock %}
+
+{% block content %}
+<header class="page-header">
+  <h1>My products</h1>
+  <p class="page-header__sub">Every product your organisation has registered on the platform.</p>
+</header>
+
+<section class="panel">
+  {% if medicines %}
+    <table class="table">
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Batch number</th>
+          <th>Expiry</th>
+          <th>Status</th>
+          <th>QR code</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for med in medicines %}
+        <tr onclick="window.location='{{ url_for('view_product', medicine_id=med.medicineId) }}'">
+          <td>{{ med.name }}</td>
+          <td>{{ med.batchNumber }}</td>
+          <td>{{ med.expiryDate }}</td>
+          <td><span class="status-pill status-pill--{{ med.currentStatus }}">{{ med.currentStatus }}</span></td>
+          <td><img class="table__thumb" src="{{ url_for('static', filename='qrcodes/' + med.qrCodeId + '.png') }}" alt="QR code for {{ med.name }}"></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <div class="empty-state">
+      <p>No products registered yet.</p>
+      <a href="{{ url_for('register') }}" class="button">Register your first product</a>
+    </div>
+  {% endif %}
+</section>
+{% endblock %}
