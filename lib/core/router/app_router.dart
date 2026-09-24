@@ -8,15 +8,23 @@ import '../../features/home/home_screen.dart';
 import '../../features/staff_auth/staff_login_screen.dart';
 import '../../features/staff_auth/staff_2fa_screen.dart';
 import '../../features/staff_auth/staff_dashboard_screen.dart';
+import '../../features/verification/patient_verification_screen.dart';
 
 final GoRouter appRouter = GoRouter(
   initialLocation: '/',
   routes: [
     GoRoute(
+      path: '/patient-verification',
+      name: 'patientVerification',
+      builder: (context, state) => const PatientVerificationScreen(),
+    ),
+    
+    GoRoute(
       path: '/staff-login',
       name: 'staffLogin',
       builder: (context, state) => const StaffLoginScreen(),
     ),
+  
 
     GoRoute(
       path: '/staff-2fa',
