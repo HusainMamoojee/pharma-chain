@@ -9,6 +9,8 @@ import '../../features/staff_auth/staff_login_screen.dart';
 import '../../features/staff_auth/staff_2fa_screen.dart';
 import '../../features/staff_auth/staff_dashboard_screen.dart';
 import '../../features/verification/patient_verification_screen.dart';
+import '../../features/verification/validation_success_screen.dart';
+import '../../features/verification/counterfeit_catch_screen.dart';
 
 final GoRouter appRouter = GoRouter(
   initialLocation: '/',
@@ -18,6 +20,23 @@ final GoRouter appRouter = GoRouter(
       name: 'patientVerification',
       builder: (context, state) => const PatientVerificationScreen(),
     ),
+   GoRoute(
+  path: '/validation-success',
+  name: 'validationSuccess',
+  builder: (context, state) {
+    final code = state.extra as String? ?? 'Unknown';
+    return ValidationSuccessScreen(batchCode: code);
+  },
+),
+
+GoRoute(
+  path: '/counterfeit-catch',
+  name: 'counterfeitCatch',
+  builder: (context, state) {
+    final code = state.extra as String? ?? 'Unknown';
+    return CounterfeitCatchScreen(batchCode: code);
+  },
+),
     
     GoRoute(
       path: '/staff-login',
