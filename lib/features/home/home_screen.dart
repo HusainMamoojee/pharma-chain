@@ -1,4 +1,3 @@
-
 import 'dart:ui';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
@@ -116,7 +115,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   // SCAN MEDICINE CARD
                   // =================================================
 
-                  _buildScanCard(),
+                  _buildScanCard(context),
 
                   const SizedBox(height: 20),
 
@@ -199,6 +198,9 @@ class _HomeScreenState extends State<HomeScreen> {
           setState(() {
             _selectedIndex = index;
           });
+          if (index == 1) {
+            context.push('/patient-verification');
+          }
         },
 
         indicatorColor:
@@ -356,7 +358,7 @@ class _HomeScreenState extends State<HomeScreen> {
   // SCAN CARD
   // =============================================================
 
-  Widget _buildScanCard() {
+  Widget _buildScanCard(BuildContext context) {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.fromLTRB(
@@ -448,8 +450,7 @@ class _HomeScreenState extends State<HomeScreen> {
             height: 43,
             child: ElevatedButton.icon(
               onPressed: () {
-                // TODO:
-                // Navigate to scanner screen later.
+                context.push('/patient-verification');
               },
               icon: const Icon(
                 Icons.camera_alt_outlined,
@@ -480,8 +481,7 @@ class _HomeScreenState extends State<HomeScreen> {
           // Manual entry
           GestureDetector(
             onTap: () {
-              // TODO:
-              // Navigate to manual verification.
+              context.push('/patient-verification');
             },
             child: Row(
               mainAxisAlignment:
