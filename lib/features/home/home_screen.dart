@@ -194,14 +194,21 @@ class _HomeScreenState extends State<HomeScreen> {
         elevation: 5,
         selectedIndex: _selectedIndex,
 
-        onDestinationSelected: (index) {
+       onDestinationSelected: (int index) {
           setState(() {
             _selectedIndex = index;
           });
-          if (index == 1) {
+
+          // Navigate to the selected screen based on the index.
+          if(index == 1){
             context.push('/patient-verification');
+          } else if(index == 2){
+            context.push('/history');
+          } else if(index == 3){
+            context.push('/profile');
           }
-        },
+       },
+     
 
         indicatorColor:
             AppColors.primary.withOpacity(0.12),
@@ -294,7 +301,7 @@ class _HomeScreenState extends State<HomeScreen> {
         // Profile button
         GestureDetector(
           onTap: () {
-            // Profile navigation can be connected later.
+            context.push('/profile');
           },
           child: CircleAvatar(
             radius: 19,
@@ -559,7 +566,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
         GestureDetector(
           onTap: () {
-            // TODO: Navigate to history.
+            context.push('/history');
           },
           child: Text(
             'View all ›',
