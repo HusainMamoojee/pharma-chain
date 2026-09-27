@@ -11,6 +11,8 @@ import '../../features/staff_auth/staff_dashboard_screen.dart';
 import '../../features/verification/patient_verification_screen.dart';
 import '../../features/verification/validation_success_screen.dart';
 import '../../features/verification/counterfeit_catch_screen.dart';
+import '../../features/history/history_screen.dart';
+import '../../features/profile/profile_screen.dart';
 
 final GoRouter appRouter = GoRouter(
   initialLocation: '/',
@@ -89,6 +91,19 @@ GoRoute(
       name: 'register',
       builder: (context, state) => const RegistrationScreen(),
     ),
+    GoRoute(
+      path: '/history',
+      name: 'history',
+      builder: (context, state) => const HistoryScreen(),
+    ),
+
+    GoRoute(
+      path: '/profile',
+      name: 'profile',
+      builder: (context, state) => const ProfileScreen(),
+    ),
+
+    
 
 
 
