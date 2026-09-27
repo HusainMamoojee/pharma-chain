@@ -81,7 +81,7 @@ class StaffDashboardScreen extends StatelessWidget {
 }
 
 // ==========================================
-// 1. WELCOME SECTION (now dynamic)
+// 1. WELCOME SECTION
 // ==========================================
 class _WelcomeSection extends StatelessWidget {
   final String name;
@@ -157,7 +157,7 @@ class _WelcomeSection extends StatelessWidget {
 }
 
 // ==========================================
-// 2. STATS ROW SECTION (now Firestore-driven, with graceful fallback)
+// 2. STATS ROW SECTION (Firestore-driven, with graceful fallback)
 // ==========================================
 class _StatsRow extends StatelessWidget {
   const _StatsRow();
@@ -320,7 +320,7 @@ class _ScanCtaCard extends StatelessWidget {
             height: 56,
             child: ElevatedButton.icon(
               onPressed: () {
-                // TODO: Navigate to Scanner View once a scan route exists for staff
+                context.push('/staff-scan');
               },
               icon: const Icon(Icons.barcode_reader, color: AppColors.textPrimary),
               label: const Text('Scan Package Now', style: TextStyle(fontSize: 16, color: AppColors.textPrimary, fontWeight: FontWeight.bold)),
@@ -465,10 +465,16 @@ class _ScanLogCard extends StatelessWidget {
 }
 
 // ==========================================
-// 5. CUSTOM BOTTOM NAVIGATION
+// 5. CUSTOM BOTTOM NAVIGATION (now fully interactive)
 // ==========================================
 class _CustomBottomNav extends StatelessWidget {
   const _CustomBottomNav();
+
+  void _showComingSoon(BuildContext context, String label) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('$label — coming soon')),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -482,25 +488,49 @@ class _CustomBottomNav extends StatelessWidget {
         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
-          const _NavItem(icon: Icons.grid_view, label: 'Dashboard', isActive: true),
-          const _NavItem(icon: Icons.inventory_2_outlined, label: 'Inventory'),
-          Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: const BoxDecoration(
-                  color: AppColors.primary,
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(Icons.qr_code_scanner, color: AppColors.surface, size: 24),
-              ),
-              const SizedBox(height: 4),
-              const Text('Quick Scan', style: TextStyle(fontSize: 10, color: AppColors.primary, fontWeight: FontWeight.bold)),
-            ],
+          _NavItem(
+            icon: Icons.grid_view,
+            label: 'Dashboard',
+            isActive: true,
+            onTap: () {
+              // Already on the dashboard — no-op.
+            },
           ),
-          const _NavItem(icon: Icons.local_shipping_outlined, label: 'Dispatches'),
-          const _NavItem(icon: Icons.receipt_long_outlined, label: 'Audit'),
+          _NavItem(
+            icon: Icons.inventory_2_outlined,
+            label: 'Inventory',
+            onTap: () => _showComingSoon(context, 'Inventory'),
+          ),
+
+          GestureDetector(
+            onTap: () => context.push('/staff-scan'),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: const BoxDecoration(
+                    color: AppColors.primary,
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(Icons.qr_code_scanner, color: AppColors.surface, size: 24),
+                ),
+                const SizedBox(height: 4),
+                const Text('Quick Scan', style: TextStyle(fontSize: 10, color: AppColors.primary, fontWeight: FontWeight.bold)),
+              ],
+            ),
+          ),
+
+          _NavItem(
+            icon: Icons.local_shipping_outlined,
+            label: 'Dispatches',
+            onTap: () => _showComingSoon(context, 'Dispatches'),
+          ),
+          _NavItem(
+            icon: Icons.receipt_long_outlined,
+            label: 'Audit',
+            onTap: () => _showComingSoon(context, 'Audit'),
+          ),
         ],
       ),
     );
@@ -511,19 +541,29 @@ class _NavItem extends StatelessWidget {
   final IconData icon;
   final String label;
   final bool isActive;
+  final VoidCallback onTap;
 
-  const _NavItem({required this.icon, required this.label, this.isActive = false});
+  const _NavItem({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+    this.isActive = false,
+  });
 
   @override
   Widget build(BuildContext context) {
     final color = isActive ? AppColors.primary : AppColors.textSecondary;
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(icon, color: color, size: 24),
-        const SizedBox(height: 4),
-        Text(label, style: TextStyle(fontSize: 10, color: color, fontWeight: isActive ? FontWeight.bold : FontWeight.normal)),
-      ],
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, color: color, size: 24),
+          const SizedBox(height: 4),
+          Text(label, style: TextStyle(fontSize: 10, color: color, fontWeight: isActive ? FontWeight.bold : FontWeight.normal)),
+        ],
+      ),
     );
   }
 }
