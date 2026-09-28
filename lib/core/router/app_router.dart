@@ -13,6 +13,8 @@ import '../../features/verification/validation_success_screen.dart';
 import '../../features/verification/counterfeit_catch_screen.dart';
 import '../../features/history/history_screen.dart';
 import '../../features/profile/profile_screen.dart';
+import '../../features/staff_scan/staff_scan_screen.dart';
+import '../../features/custody/transfer_of_custody_screen.dart';
 
 final GoRouter appRouter = GoRouter(
   initialLocation: '/',
@@ -103,7 +105,19 @@ GoRoute(
       builder: (context, state) => const ProfileScreen(),
     ),
 
-    
+    GoRoute(
+      path: '/staff-scan',
+      name: 'staffScan',
+      builder:(context, state) => const StaffScanScreen(),
+    ),
+   GoRoute(
+  path: '/custody-transfer',
+  name: 'custodyTransfer',
+  builder: (context, state) {
+    final code = state.extra as String? ?? 'Unknown';
+    return TransferOfCustodyScreen(batchCode: code);
+  },
+),
 
 
 
