@@ -15,6 +15,7 @@ import '../../features/history/history_screen.dart';
 import '../../features/profile/profile_screen.dart';
 import '../../features/staff_scan/staff_scan_screen.dart';
 import '../../features/custody/transfer_of_custody_screen.dart';
+import '../../features/inventory/inventory_screen.dart';
 
 final GoRouter appRouter = GoRouter(
   initialLocation: '/',
@@ -117,7 +118,15 @@ GoRoute(
     final code = state.extra as String? ?? 'Unknown';
     return TransferOfCustodyScreen(batchCode: code);
   },
+
 ),
+GoRoute(
+  path: '/inventory',
+  name: 'inventory',
+  builder: (context, state) => const InventoryScreen(),
+),
+
+
 
 
 
