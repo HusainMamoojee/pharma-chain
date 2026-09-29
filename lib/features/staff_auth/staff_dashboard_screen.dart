@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../../core/theme/app_colors.dart';
 import '../../services/auth_service.dart';
+import '../../shared/widgets/staff_bottom_nav.dart';
 
 class StaffDashboardScreen extends StatelessWidget {
   const StaffDashboardScreen({super.key});
@@ -75,7 +76,7 @@ class StaffDashboardScreen extends StatelessWidget {
       ),
 
       // 3. CUSTOM BOTTOM NAVIGATION
-      bottomNavigationBar: const _CustomBottomNav(),
+      bottomNavigationBar: const StaffBottomNav(currentIndex: 0),
     );
   }
 }
