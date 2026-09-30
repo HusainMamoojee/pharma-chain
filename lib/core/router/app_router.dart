@@ -16,6 +16,9 @@ import '../../features/profile/profile_screen.dart';
 import '../../features/staff_scan/staff_scan_screen.dart';
 import '../../features/custody/transfer_of_custody_screen.dart';
 import '../../features/inventory/inventory_screen.dart';
+import '../../features/dispatches/dispatches_screen.dart';
+import '../../features/audit/audit_screen.dart';
+
 
 final GoRouter appRouter = GoRouter(
   initialLocation: '/',
@@ -125,7 +128,16 @@ GoRoute(
   name: 'inventory',
   builder: (context, state) => const InventoryScreen(),
 ),
-
+GoRoute(
+  path: '/dispatches',
+  name: 'dispatches',
+  builder: (context, state) => const DispatchesScreen(),
+),
+GoRoute(
+  path: '/audit',
+  name: 'audit',
+  builder: (context, state) => const AuditScreen(),
+),
 
 
 

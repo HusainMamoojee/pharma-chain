@@ -63,13 +63,17 @@ class StaffBottomNav extends StatelessWidget {
             icon: Icons.local_shipping_outlined,
             label: 'Dispatches',
             isActive: currentIndex == 3,
-            onTap: () => _showComingSoon(context, 'Dispatches'),
+            onTap: () {
+              if (currentIndex != 3) context.go('/dispatches');
+            }
           ),
           _NavItem(
             icon: Icons.receipt_long_outlined,
             label: 'Audit',
             isActive: currentIndex == 4,
-            onTap: () => _showComingSoon(context, 'Audit'),
+            onTap: () {
+              if (currentIndex != 4) context.go('/audit');
+            }
           ),
         ],
       ),
