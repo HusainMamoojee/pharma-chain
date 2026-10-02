@@ -47,10 +47,10 @@ class _PatientVerificationScreenState extends State<PatientVerificationScreen> {
 
     if (!mounted) return;
 
-    if (doc.exists) {
-      context.push('/validation-success', extra: code);
+       if (doc.exists) {
+      context.push('/validation-success', extra: {'code': code, 'data': doc.data()});
     } else {
-      context.push('/counterfeit-catch', extra: code);
+      context.push('/counterfeit-catch', extra: {'code': code});
     }
 
     setState(() => _isProcessing = false);
