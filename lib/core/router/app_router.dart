@@ -26,14 +26,17 @@ final GoRouter appRouter = GoRouter(
     GoRoute(
       path: '/patient-verification',
       name: 'patientVerification',
-      builder: (context, state) => const PatientVerificationScreen(),
+        builder: (context, state) => const PatientVerificationScreen(),
+  
     ),
    GoRoute(
   path: '/validation-success',
   name: 'validationSuccess',
   builder: (context, state) {
-    final code = state.extra as String? ?? 'Unknown';
-    return ValidationSuccessScreen(batchCode: code);
+     final extra = state.extra as Map<String, dynamic>? ?? {};
+    final code = extra['code'] as String? ?? 'Unknown';
+    final data = extra['data'] as Map<String, dynamic>?;
+    return ValidationSuccessScreen(batchCode: code, batchData: data);
   },
 ),
 
@@ -41,7 +44,8 @@ GoRoute(
   path: '/counterfeit-catch',
   name: 'counterfeitCatch',
   builder: (context, state) {
-    final code = state.extra as String? ?? 'Unknown';
+   final extra = state.extra as Map<String, dynamic>? ?? {};
+    final code = extra['code'] as String? ?? 'Unknown';
     return CounterfeitCatchScreen(batchCode: code);
   },
 ),

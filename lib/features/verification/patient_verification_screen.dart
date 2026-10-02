@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:go_router/go_router.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import '../../core/theme/app_colors.dart';
@@ -42,18 +43,14 @@ class _PatientVerificationScreenState extends State<PatientVerificationScreen> {
   }
 
   Future<void> _verifyCode(String code) async {
-    // TODO: replace with a real Firestore/blockchain lookup against the scanned batch code
-    await Future.delayed(const Duration(seconds: 1));
+    final doc = await FirebaseFirestore.instance.collection('batches').doc(code).get();
 
     if (!mounted) return;
 
-    // Placeholder logic: any code containing "FAKE" simulates a counterfeit hit
-    final bool isCounterfeit = code.toUpperCase().contains('FAKE');
-
-    if (isCounterfeit) {
-      context.push('/counterfeit-catch', extra: code);
-    } else {
+    if (doc.exists) {
       context.push('/validation-success', extra: code);
+    } else {
+      context.push('/counterfeit-catch', extra: code);
     }
 
     setState(() => _isProcessing = false);

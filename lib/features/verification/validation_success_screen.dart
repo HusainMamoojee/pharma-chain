@@ -1,15 +1,21 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_text_styles.dart';
 
 class ValidationSuccessScreen extends StatelessWidget {
   final String batchCode;
+  final Map<String, dynamic>? batchData;
 
-  const ValidationSuccessScreen({super.key, required this.batchCode});
+  const ValidationSuccessScreen({super.key, required this.batchCode, this.batchData});
 
   @override
   Widget build(BuildContext context) {
+    final productName = batchData?['productName'] as String? ?? 'Unknown product';
+    final expiryDate = batchData?['expiryDate'] as String? ?? '—';
+    final organizationId = batchData?['organizationId'] as String?;
+
     return Scaffold(
       backgroundColor: AppColors.background,
       body: SafeArea(
@@ -45,7 +51,7 @@ class ValidationSuccessScreen extends StatelessWidget {
               ),
               const SizedBox(height: 8),
               Text(
-                'This batch has been confirmed on the blockchain ledger.',
+                productName,
                 textAlign: TextAlign.center,
                 style: AppTextStyles.body.copyWith(color: AppColors.textSecondary),
               ),
@@ -62,13 +68,11 @@ class ValidationSuccessScreen extends StatelessWidget {
                   children: [
                     _DetailRow(label: 'Batch Code', value: batchCode),
                     const Divider(height: 24),
-                    // TODO: replace these with real fields once batches are
-                    // actually stored/minted on-chain and looked up by batchCode
-                    const _DetailRow(label: 'Manufacturer', value: 'Aspen Pharmacare'),
+                    _DetailRow(label: 'Product', value: productName),
                     const Divider(height: 24),
-                    const _DetailRow(label: 'Expiry Date', value: '2027-03-14'),
+                    _OrganizationRow(organizationId: organizationId),
                     const Divider(height: 24),
-                    const _DetailRow(label: 'Verified On', value: 'Blockchain Ledger'),
+                    _DetailRow(label: 'Expiry Date', value: expiryDate),
                   ],
                 ),
               ),
@@ -124,6 +128,27 @@ class _DetailRow extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+class _OrganizationRow extends StatelessWidget {
+  final String? organizationId;
+
+  const _OrganizationRow({required this.organizationId});
+
+  @override
+  Widget build(BuildContext context) {
+    if (organizationId == null) {
+      return const _DetailRow(label: 'Organization', value: '—');
+    }
+
+    return FutureBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+      future: FirebaseFirestore.instance.collection('stakeholders').doc(organizationId).get(),
+      builder: (context, snapshot) {
+        final name = snapshot.data?.data()?['organizationName'] as String? ?? organizationId!;
+        return _DetailRow(label: 'Organization', value: name);
+      },
     );
   }
 }
