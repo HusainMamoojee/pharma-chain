@@ -51,7 +51,6 @@ class ProfileScreen extends StatelessWidget {
               icon: Icons.person_outline,
               label: 'Edit Profile',
               onTap: () {
-                // TODO: build an edit-profile screen
               },
             ),
             _ProfileTile(
@@ -73,6 +72,13 @@ class ProfileScreen extends StatelessWidget {
               label: 'Help & Support',
               onTap: () {
                 // TODO: support/FAQ screen
+              },
+            ),
+            _ProfileTile(
+              icon: Icons.fact_check_outlined,
+              label: 'My Reports',
+              onTap: () {
+                context.go('/my-reports');
               },
             ),
             const Spacer(),
