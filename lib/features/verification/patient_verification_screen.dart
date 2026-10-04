@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:go_router/go_router.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_text_styles.dart';
 
@@ -42,12 +43,23 @@ class _PatientVerificationScreenState extends State<PatientVerificationScreen> {
     _verifyCode(code);
   }
 
-  Future<void> _verifyCode(String code) async {
+   Future<void> _verifyCode(String code) async {
     final doc = await FirebaseFirestore.instance.collection('batches').doc(code).get();
+
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid != null) {
+      await FirebaseFirestore.instance.collection('verifications').add({
+        'userId': uid,
+        'batchCode': code,
+        'productName': doc.data()?['productName'] as String? ?? code,
+        'status': doc.exists ? 'Authentic' : 'Under Review',
+        'verifiedAt': FieldValue.serverTimestamp(),
+      });
+    }
 
     if (!mounted) return;
 
-       if (doc.exists) {
+    if (doc.exists) {
       context.push('/validation-success', extra: {'code': code, 'data': doc.data()});
     } else {
       context.push('/counterfeit-catch', extra: {'code': code});
@@ -55,7 +67,6 @@ class _PatientVerificationScreenState extends State<PatientVerificationScreen> {
 
     setState(() => _isProcessing = false);
   }
-
   void _showManualEntrySheet() {
     showModalBottomSheet(
       context: context,
