@@ -338,11 +338,16 @@ class _ScanCtaCard extends StatelessWidget {
   }
 }
 
-// ==========================================
-// 4. RECENT SCANS LOG (still placeholder data — flagged below)
-// ==========================================
 class _RecentScansSection extends StatelessWidget {
   const _RecentScansSection();
+
+  String _timeAgo(DateTime time) {
+    final diff = DateTime.now().difference(time);
+    if (diff.inMinutes < 1) return 'just now';
+    if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
+    if (diff.inHours < 24) return '${diff.inHours}h ago';
+    return '${diff.inDays}d ago';
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -360,31 +365,54 @@ class _RecentScansSection extends StatelessWidget {
               ],
             ),
             TextButton(
-              onPressed: () {},
+              onPressed: () => context.push('/history'),
               child: const Text('View Log', style: TextStyle(color: AppColors.primary, fontWeight: FontWeight.bold)),
             )
           ],
         ),
         const SizedBox(height: 8),
-        // TODO: replace with a StreamBuilder over a 'scan_logs' Firestore collection
-        _ScanLogCard(
-          title: 'Ceftriaxone 1g Vial',
-          subtitle: 'Lot #CT-9014  •  12m ago',
-          status: 'Logged',
-          location: 'Bay 4 Pallet B',
-          statusColor: AppColors.primary,
-          bgColor: AppColors.primary.withOpacity(0.15),
-          icon: Icons.check_circle_outline,
-        ),
-        const SizedBox(height: 12),
-        _ScanLogCard(
-          title: 'Insulin Glargine 100U',
-          subtitle: 'Lot #IG-4420  •  35m ago',
-          status: '3.4°C Safe',
-          location: 'Zone 2 Chiller',
-          statusColor: AppColors.primary,
-          bgColor: AppColors.primary.withOpacity(0.15),
-          icon: Icons.ac_unit,
+        StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+          stream: FirebaseFirestore.instance
+              .collection('scan_logs')
+              .orderBy('scannedAt', descending: true)
+              .limit(5)
+              .snapshots(),
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return const Padding(
+                padding: EdgeInsets.symmetric(vertical: 24),
+                child: Center(child: CircularProgressIndicator()),
+              );
+            }
+            final docs = snapshot.data?.docs ?? [];
+            if (docs.isEmpty) {
+              return const Padding(
+                padding: EdgeInsets.symmetric(vertical: 24),
+                child: Text(
+                  'No scans logged yet today.',
+                  style: TextStyle(color: AppColors.textSecondary, fontSize: 13),
+                ),
+              );
+            }
+            return Column(
+              children: docs.map((doc) {
+                final data = doc.data();
+                final scannedAt = (data['scannedAt'] as Timestamp?)?.toDate();
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: _ScanLogCard(
+                    title: data['productName'] as String? ?? 'Unknown item',
+                    subtitle: 'Lot #${data['lotNumber'] ?? '—'}  •  ${scannedAt != null ? _timeAgo(scannedAt) : '—'}',
+                    status: data['status'] as String? ?? 'Logged',
+                    location: data['location'] as String? ?? '—',
+                    statusColor: AppColors.primary,
+                    bgColor: AppColors.primary.withOpacity(0.15),
+                    icon: Icons.check_circle_outline,
+                  ),
+                );
+              }).toList(),
+            );
+          },
         ),
       ],
     );
