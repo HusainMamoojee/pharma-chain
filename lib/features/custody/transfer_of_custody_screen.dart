@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_text_styles.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 class CustodyStage {
   final String label;
@@ -36,19 +38,46 @@ class _TransferOfCustodyScreenState extends State<TransferOfCustodyScreen> {
   Future<void> _handleAction(String action) async {
     setState(() => _isProcessing = true);
 
-    // TODO: write the custody event to Firestore/blockchain here:
-    // { batchCode, action, staffUid, timestamp, location }
-    await Future.delayed(const Duration(seconds: 1));
+    try {
+      final uid = FirebaseAuth.instance.currentUser?.uid;
 
-    if (!mounted) return;
-    setState(() => _isProcessing = false);
+      // Look up the product name so the dashboard's recent-scans list has
+      // something readable to show, instead of just the raw batch code.
+      final batchDoc = await FirebaseFirestore.instance.collection('batches').doc(widget.batchCode).get();
+      final productName = batchDoc.data()?['productName'] as String? ?? widget.batchCode;
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('$action recorded for ${widget.batchCode}')),
-    );
-    context.pop();
+      await FirebaseFirestore.instance.collection('custody_events').add({
+        'batchCode': widget.batchCode,
+        'action': action,
+        'staffUid': uid,
+        'timestamp': FieldValue.serverTimestamp(),
+      });
+
+      await FirebaseFirestore.instance.collection('scan_logs').add({
+        'productName': productName,
+        'lotNumber': widget.batchCode,
+        'status': action,
+        'location': 'Bay 4 (Gauteng Central Depot)',
+        'scannedAt': FieldValue.serverTimestamp(),
+        'scannedBy': uid,
+      });
+
+      if (!mounted) return;
+      setState(() => _isProcessing = false);
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('$action recorded for ${widget.batchCode}')),
+      );
+      context.pop();
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _isProcessing = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not record this action. Please try again.')),
+      );
+    }
   }
-
+  
   @override
   Widget build(BuildContext context) {
     return Scaffold(

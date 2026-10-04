@@ -1,5 +1,8 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import '../../core/utils/totp.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_text_styles.dart';
 
@@ -15,6 +18,7 @@ class _Staff2FAScreenState extends State<Staff2FAScreen> {
       List.generate(6, (_) => TextEditingController());
   final List<FocusNode> _focusNodes = List.generate(6, (_) => FocusNode());
   bool _isVerifying = false;
+  String? _error;
 
   @override
   void dispose() {
@@ -29,22 +33,58 @@ class _Staff2FAScreenState extends State<Staff2FAScreen> {
 
   String get _enteredCode => _controllers.map((c) => c.text).join();
 
+  bool _codeMatches(String secret, String code) {
+   return Totp.verify(secret, code);
+  }
+
   Future<void> _handleVerify() async {
     if (_enteredCode.length != 6) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please enter the full 6-digit code')),
-      );
+      setState(() => _error = 'Please enter the full 6-digit code');
       return;
     }
 
-    setState(() => _isVerifying = true);
+    setState(() {
+      _isVerifying = true;
+      _error = null;
+    });
 
-    // TODO: replace with real verification (Firebase Phone Auth / TOTP / backend check)
-    await Future.delayed(const Duration(seconds: 1));
+    try {
+      final uid = FirebaseAuth.instance.currentUser?.uid;
+      if (uid == null) {
+        setState(() {
+          _isVerifying = false;
+          _error = 'Not signed in.';
+        });
+        return;
+      }
 
-    if (!mounted) return;
-    setState(() => _isVerifying = false);
-    context.go('/staff-dashboard');
+      final userDoc = await FirebaseFirestore.instance.collection('users').doc(uid).get();
+      final secret = userDoc.data()?['totpSecret'] as String?;
+
+      if (secret == null) {
+        if (!mounted) return;
+        context.go('/staff-2fa-enroll');
+        return;
+      }
+
+      if (!_codeMatches(secret, _enteredCode)) {
+        setState(() {
+          _isVerifying = false;
+          _error = 'Incorrect code. Please try again.';
+        });
+        return;
+      }
+
+      if (!mounted) return;
+      setState(() => _isVerifying = false);
+      context.go('/staff-dashboard');
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _isVerifying = false;
+        _error = 'Something went wrong. Please try again.';
+      });
+    }
   }
 
   void _onDigitChanged(String value, int index) {
@@ -75,7 +115,7 @@ class _Staff2FAScreenState extends State<Staff2FAScreen> {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  'Enter the 6-digit code sent to your device',
+                  'Enter the 6-digit code from your authenticator app',
                   style: AppTextStyles.body.copyWith(color: Colors.white60),
                   textAlign: TextAlign.center,
                 ),
@@ -114,6 +154,10 @@ class _Staff2FAScreenState extends State<Staff2FAScreen> {
                     );
                   }),
                 ),
+                if (_error != null) ...[
+                  const SizedBox(height: 12),
+                  Text(_error!, style: TextStyle(color: AppColors.danger), textAlign: TextAlign.center),
+                ],
                 const SizedBox(height: 32),
                 SizedBox(
                   width: double.infinity,
@@ -140,19 +184,6 @@ class _Staff2FAScreenState extends State<Staff2FAScreen> {
                             'Verify',
                             style: AppTextStyles.label.copyWith(color: AppColors.neutral),
                           ),
-                  ),
-                ),
-                const SizedBox(height: 16),
-                TextButton(
-                  onPressed: () {
-                    // TODO: trigger resend code logic
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Code resent')),
-                    );
-                  },
-                  child: Text(
-                    'Resend code',
-                    style: AppTextStyles.label.copyWith(color: Colors.white60),
                   ),
                 ),
               ],

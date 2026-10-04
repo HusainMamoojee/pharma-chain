@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_text_styles.dart';
 import '../../services/auth_service.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 class StaffLoginScreen extends StatefulWidget {
   const StaffLoginScreen({super.key});
@@ -55,8 +56,13 @@ class _StaffLoginScreenState extends State<StaffLoginScreen> {
       }
 
 
+       final userDoc = await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
+      final totpEnabled = userDoc.data()?['totpEnabled'] == true;
+
       if (!mounted) return;
-      context.go('/staff-2fa');
+      context.go(totpEnabled ? '/staff-2fa' : '/staff-2fa-enroll');
+
+      
     } on FirebaseAuthException catch (e) {
       String message = 'Login failed. Please try again.';
       if (e.code == 'user-not-found' ||
