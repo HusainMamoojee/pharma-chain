@@ -8,11 +8,20 @@ import '../../features/home/home_screen.dart';
 import '../../features/staff_auth/staff_login_screen.dart';
 import '../../features/staff_auth/staff_2fa_screen.dart';
 import '../../features/staff_auth/staff_dashboard_screen.dart';
+import '../../features/staff_auth/staff_2fa_enroll_screen.dart';
 import '../../features/verification/patient_verification_screen.dart';
 import '../../features/verification/validation_success_screen.dart';
 import '../../features/verification/counterfeit_catch_screen.dart';
+import '../../features/verification/report_detail_screen.dart';
+import '../../features/reports/my_reports_screen.dart';
 import '../../features/history/history_screen.dart';
 import '../../features/profile/profile_screen.dart';
+import '../../features/staff_scan/staff_scan_screen.dart';
+import '../../features/custody/transfer_of_custody_screen.dart';
+import '../../features/inventory/inventory_screen.dart';
+import '../../features/dispatches/dispatches_screen.dart';
+import '../../features/audit/audit_screen.dart';
+
 
 final GoRouter appRouter = GoRouter(
   initialLocation: '/',
@@ -20,14 +29,17 @@ final GoRouter appRouter = GoRouter(
     GoRoute(
       path: '/patient-verification',
       name: 'patientVerification',
-      builder: (context, state) => const PatientVerificationScreen(),
+        builder: (context, state) => const PatientVerificationScreen(),
+  
     ),
    GoRoute(
   path: '/validation-success',
   name: 'validationSuccess',
   builder: (context, state) {
-    final code = state.extra as String? ?? 'Unknown';
-    return ValidationSuccessScreen(batchCode: code);
+     final extra = state.extra as Map<String, dynamic>? ?? {};
+    final code = extra['code'] as String? ?? 'Unknown';
+    final data = extra['data'] as Map<String, dynamic>?;
+    return ValidationSuccessScreen(batchCode: code, batchData: data);
   },
 ),
 
@@ -35,9 +47,23 @@ GoRoute(
   path: '/counterfeit-catch',
   name: 'counterfeitCatch',
   builder: (context, state) {
-    final code = state.extra as String? ?? 'Unknown';
+   final extra = state.extra as Map<String, dynamic>? ?? {};
+    final code = extra['code'] as String? ?? 'Unknown';
     return CounterfeitCatchScreen(batchCode: code);
   },
+),GoRoute(
+  path: '/report-detail',
+  name: 'reportDetail',
+  builder: (context, state) {
+    final code = state.extra as String? ?? 'Unknown';
+    return ReportDetailScreen(batchCode: code);
+  },
+),
+
+GoRoute(
+  path: '/my-reports',
+  name: 'myReports',
+  builder: (context, state) => const MyReportsScreen(),
 ),
     
     GoRoute(
@@ -51,6 +77,10 @@ GoRoute(
       path: '/staff-2fa',
       name: 'staff2FA',
       builder: (context, state) => const Staff2FAScreen(),
+    ),  GoRoute(
+      path: '/staff-2fa-enroll',
+      name: 'staff2FAEnroll',
+      builder: (context, state) => const Staff2FAEnrollScreen(),
     ),
     GoRoute(
       path: '/staff-dashboard',
@@ -103,7 +133,36 @@ GoRoute(
       builder: (context, state) => const ProfileScreen(),
     ),
 
-    
+    GoRoute(
+      path: '/staff-scan',
+      name: 'staffScan',
+      builder:(context, state) => const StaffScanScreen(),
+    ),
+   GoRoute(
+  path: '/custody-transfer',
+  name: 'custodyTransfer',
+  builder: (context, state) {
+    final code = state.extra as String? ?? 'Unknown';
+    return TransferOfCustodyScreen(batchCode: code);
+  },
+
+),
+GoRoute(
+  path: '/inventory',
+  name: 'inventory',
+  builder: (context, state) => const InventoryScreen(),
+),
+GoRoute(
+  path: '/dispatches',
+  name: 'dispatches',
+  builder: (context, state) => const DispatchesScreen(),
+),
+GoRoute(
+  path: '/audit',
+  name: 'audit',
+  builder: (context, state) => const AuditScreen(),
+),
+
 
 
 

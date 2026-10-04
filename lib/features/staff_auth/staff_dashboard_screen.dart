@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../../core/theme/app_colors.dart';
 import '../../services/auth_service.dart';
+import '../../shared/widgets/staff_bottom_nav.dart';
 
 class StaffDashboardScreen extends StatelessWidget {
   const StaffDashboardScreen({super.key});
@@ -75,13 +76,13 @@ class StaffDashboardScreen extends StatelessWidget {
       ),
 
       // 3. CUSTOM BOTTOM NAVIGATION
-      bottomNavigationBar: const _CustomBottomNav(),
+      bottomNavigationBar: const StaffBottomNav(currentIndex: 0),
     );
   }
 }
 
 // ==========================================
-// 1. WELCOME SECTION (now dynamic)
+// 1. WELCOME SECTION
 // ==========================================
 class _WelcomeSection extends StatelessWidget {
   final String name;
@@ -157,7 +158,7 @@ class _WelcomeSection extends StatelessWidget {
 }
 
 // ==========================================
-// 2. STATS ROW SECTION (now Firestore-driven, with graceful fallback)
+// 2. STATS ROW SECTION (Firestore-driven, with graceful fallback)
 // ==========================================
 class _StatsRow extends StatelessWidget {
   const _StatsRow();
@@ -320,7 +321,7 @@ class _ScanCtaCard extends StatelessWidget {
             height: 56,
             child: ElevatedButton.icon(
               onPressed: () {
-                // TODO: Navigate to Scanner View once a scan route exists for staff
+                context.push('/staff-scan');
               },
               icon: const Icon(Icons.barcode_reader, color: AppColors.textPrimary),
               label: const Text('Scan Package Now', style: TextStyle(fontSize: 16, color: AppColors.textPrimary, fontWeight: FontWeight.bold)),
@@ -337,11 +338,16 @@ class _ScanCtaCard extends StatelessWidget {
   }
 }
 
-// ==========================================
-// 4. RECENT SCANS LOG (still placeholder data — flagged below)
-// ==========================================
 class _RecentScansSection extends StatelessWidget {
   const _RecentScansSection();
+
+  String _timeAgo(DateTime time) {
+    final diff = DateTime.now().difference(time);
+    if (diff.inMinutes < 1) return 'just now';
+    if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
+    if (diff.inHours < 24) return '${diff.inHours}h ago';
+    return '${diff.inDays}d ago';
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -359,31 +365,54 @@ class _RecentScansSection extends StatelessWidget {
               ],
             ),
             TextButton(
-              onPressed: () {},
+              onPressed: () => context.push('/history'),
               child: const Text('View Log', style: TextStyle(color: AppColors.primary, fontWeight: FontWeight.bold)),
             )
           ],
         ),
         const SizedBox(height: 8),
-        // TODO: replace with a StreamBuilder over a 'scan_logs' Firestore collection
-        _ScanLogCard(
-          title: 'Ceftriaxone 1g Vial',
-          subtitle: 'Lot #CT-9014  •  12m ago',
-          status: 'Logged',
-          location: 'Bay 4 Pallet B',
-          statusColor: AppColors.primary,
-          bgColor: AppColors.primary.withOpacity(0.15),
-          icon: Icons.check_circle_outline,
-        ),
-        const SizedBox(height: 12),
-        _ScanLogCard(
-          title: 'Insulin Glargine 100U',
-          subtitle: 'Lot #IG-4420  •  35m ago',
-          status: '3.4°C Safe',
-          location: 'Zone 2 Chiller',
-          statusColor: AppColors.primary,
-          bgColor: AppColors.primary.withOpacity(0.15),
-          icon: Icons.ac_unit,
+        StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+          stream: FirebaseFirestore.instance
+              .collection('scan_logs')
+              .orderBy('scannedAt', descending: true)
+              .limit(5)
+              .snapshots(),
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return const Padding(
+                padding: EdgeInsets.symmetric(vertical: 24),
+                child: Center(child: CircularProgressIndicator()),
+              );
+            }
+            final docs = snapshot.data?.docs ?? [];
+            if (docs.isEmpty) {
+              return const Padding(
+                padding: EdgeInsets.symmetric(vertical: 24),
+                child: Text(
+                  'No scans logged yet today.',
+                  style: TextStyle(color: AppColors.textSecondary, fontSize: 13),
+                ),
+              );
+            }
+            return Column(
+              children: docs.map((doc) {
+                final data = doc.data();
+                final scannedAt = (data['scannedAt'] as Timestamp?)?.toDate();
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: _ScanLogCard(
+                    title: data['productName'] as String? ?? 'Unknown item',
+                    subtitle: 'Lot #${data['lotNumber'] ?? '—'}  •  ${scannedAt != null ? _timeAgo(scannedAt) : '—'}',
+                    status: data['status'] as String? ?? 'Logged',
+                    location: data['location'] as String? ?? '—',
+                    statusColor: AppColors.primary,
+                    bgColor: AppColors.primary.withOpacity(0.15),
+                    icon: Icons.check_circle_outline,
+                  ),
+                );
+              }).toList(),
+            );
+          },
         ),
       ],
     );
@@ -465,10 +494,16 @@ class _ScanLogCard extends StatelessWidget {
 }
 
 // ==========================================
-// 5. CUSTOM BOTTOM NAVIGATION
+// 5. CUSTOM BOTTOM NAVIGATION (now fully interactive)
 // ==========================================
 class _CustomBottomNav extends StatelessWidget {
   const _CustomBottomNav();
+
+  void _showComingSoon(BuildContext context, String label) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('$label — coming soon')),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -482,25 +517,49 @@ class _CustomBottomNav extends StatelessWidget {
         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
-          const _NavItem(icon: Icons.grid_view, label: 'Dashboard', isActive: true),
-          const _NavItem(icon: Icons.inventory_2_outlined, label: 'Inventory'),
-          Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: const BoxDecoration(
-                  color: AppColors.primary,
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(Icons.qr_code_scanner, color: AppColors.surface, size: 24),
-              ),
-              const SizedBox(height: 4),
-              const Text('Quick Scan', style: TextStyle(fontSize: 10, color: AppColors.primary, fontWeight: FontWeight.bold)),
-            ],
+          _NavItem(
+            icon: Icons.grid_view,
+            label: 'Dashboard',
+            isActive: true,
+            onTap: () {
+              // Already on the dashboard — no-op.
+            },
           ),
-          const _NavItem(icon: Icons.local_shipping_outlined, label: 'Dispatches'),
-          const _NavItem(icon: Icons.receipt_long_outlined, label: 'Audit'),
+          _NavItem(
+            icon: Icons.inventory_2_outlined,
+            label: 'Inventory',
+            onTap: () => _showComingSoon(context, 'Inventory'),
+          ),
+
+          GestureDetector(
+            onTap: () => context.push('/staff-scan'),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: const BoxDecoration(
+                    color: AppColors.primary,
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(Icons.qr_code_scanner, color: AppColors.surface, size: 24),
+                ),
+                const SizedBox(height: 4),
+                const Text('Quick Scan', style: TextStyle(fontSize: 10, color: AppColors.primary, fontWeight: FontWeight.bold)),
+              ],
+            ),
+          ),
+
+          _NavItem(
+            icon: Icons.local_shipping_outlined,
+            label: 'Dispatches',
+            onTap: () => _showComingSoon(context, 'Dispatches'),
+          ),
+          _NavItem(
+            icon: Icons.receipt_long_outlined,
+            label: 'Audit',
+            onTap: () => _showComingSoon(context, 'Audit'),
+          ),
         ],
       ),
     );
@@ -511,19 +570,29 @@ class _NavItem extends StatelessWidget {
   final IconData icon;
   final String label;
   final bool isActive;
+  final VoidCallback onTap;
 
-  const _NavItem({required this.icon, required this.label, this.isActive = false});
+  const _NavItem({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+    this.isActive = false,
+  });
 
   @override
   Widget build(BuildContext context) {
     final color = isActive ? AppColors.primary : AppColors.textSecondary;
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(icon, color: color, size: 24),
-        const SizedBox(height: 4),
-        Text(label, style: TextStyle(fontSize: 10, color: color, fontWeight: isActive ? FontWeight.bold : FontWeight.normal)),
-      ],
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, color: color, size: 24),
+          const SizedBox(height: 4),
+          Text(label, style: TextStyle(fontSize: 10, color: color, fontWeight: isActive ? FontWeight.bold : FontWeight.normal)),
+        ],
+      ),
     );
   }
 }

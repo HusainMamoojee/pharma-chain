@@ -1,9 +1,5 @@
-import 'package:flutter/material.dart';
-import '../../core/theme/app_colors.dart';
-import '../../core/theme/app_text_styles.dart';
-
-
-
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_text_styles.dart';
@@ -11,37 +7,19 @@ import '../../core/theme/app_text_styles.dart';
 class HistoryScreen extends StatelessWidget {
   const HistoryScreen({super.key});
 
+  String _timeAgo(DateTime time) {
+    final diff = DateTime.now().difference(time);
+    if (diff.inMinutes < 1) return 'just now';
+    if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
+    if (diff.inHours < 24) return '${diff.inHours}h ago';
+    if (diff.inDays == 1) return 'Yesterday';
+    if (diff.inDays < 7) return '${diff.inDays} days ago';
+    return '${(diff.inDays / 7).floor()} week${diff.inDays >= 14 ? 's' : ''} ago';
+  }
+
   @override
   Widget build(BuildContext context) {
-    // TODO: replace with a real Firestore query on a 'verifications' collection,
-    // scoped to the current user's uid, ordered by timestamp descending.
-    final items = const [
-      _HistoryItem(
-        medicineName: 'Amoxicillin 500mg',
-        batchNumber: 'Batch #RX-881',
-        time: '10m ago',
-        status: 'Authentic',
-      ),
-      _HistoryItem(
-        medicineName: 'Lipitor 20mg',
-        batchNumber: 'Batch #LP-429',
-        time: 'Yesterday',
-        status: 'Authentic',
-      ),
-      _HistoryItem(
-        medicineName: 'Augmentin 625mg',
-        batchNumber: 'Batch #AUG-991',
-        time: '3 days ago',
-        status: 'Under Review',
-        warning: true,
-      ),
-      _HistoryItem(
-        medicineName: 'Panado Paracetamol',
-        batchNumber: 'Batch #PA-0129',
-        time: '1 week ago',
-        status: 'Authentic',
-      ),
-    ];
+    final uid = FirebaseAuth.instance.currentUser?.uid;
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -50,18 +28,68 @@ class HistoryScreen extends StatelessWidget {
         elevation: 0,
         title: Text('Verification History', style: AppTextStyles.headline.copyWith(fontSize: 18)),
       ),
-      body: items.isEmpty
+      body: uid == null
           ? Center(
               child: Text(
-                'No verifications yet.\nScan a medicine to get started.',
+                'Please log in to see your verification history.',
                 textAlign: TextAlign.center,
                 style: AppTextStyles.body.copyWith(color: AppColors.textSecondary),
               ),
             )
-          : ListView.builder(
-              padding: const EdgeInsets.all(16),
-              itemCount: items.length,
-              itemBuilder: (context, index) => items[index],
+          : StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+              stream: FirebaseFirestore.instance
+                  .collection('verifications')
+                  .where('userId', isEqualTo: uid)
+                  .orderBy('verifiedAt', descending: true)
+                  .snapshots(),
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+
+                if (snapshot.hasError) {
+                  return Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(24.0),
+                      child: SelectableText(
+                        'Error loading history:\n${snapshot.error}',
+                        textAlign: TextAlign.center,
+                        style: AppTextStyles.body.copyWith(color: AppColors.danger),
+                      ),
+                    ),
+                  );
+                }
+
+        
+
+                final docs = snapshot.data?.docs ?? [];
+                if (docs.isEmpty) {
+                  return Center(
+                    child: Text(
+                      'No verifications yet.\nScan a medicine to get started.',
+                      textAlign: TextAlign.center,
+                      style: AppTextStyles.body.copyWith(color: AppColors.textSecondary),
+                    ),
+                  );
+                }
+
+                return ListView.builder(
+                  padding: const EdgeInsets.all(16),
+                  itemCount: docs.length,
+                  itemBuilder: (context, index) {
+                    final data = docs[index].data();
+                    final verifiedAt = (data['verifiedAt'] as Timestamp?)?.toDate();
+                    final status = data['status'] as String? ?? 'Authentic';
+                    return _HistoryItem(
+                      medicineName: data['productName'] as String? ?? 'Unknown item',
+                      batchNumber: 'Batch #${data['batchCode'] ?? '—'}',
+                      time: verifiedAt != null ? _timeAgo(verifiedAt) : '—',
+                      status: status,
+                      warning: status != 'Authentic',
+                    );
+                  },
+                );
+              },
             ),
     );
   }

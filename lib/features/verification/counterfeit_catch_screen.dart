@@ -77,13 +77,8 @@ class CounterfeitCatchScreen extends StatelessWidget {
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton(
-                  onPressed: () {
-                    // TODO: hook up to a real reporting flow (Firestore 'reports' collection)
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Report submitted. Thank you for helping keep the supply chain safe.')),
-                    );
-                    context.go('/home');
-                  },
+                  onPressed: () => context.go('/report-detail', extra: batchCode),
+                  
                   style: ElevatedButton.styleFrom(
                     backgroundColor: AppColors.danger,
                     foregroundColor: Colors.white,
