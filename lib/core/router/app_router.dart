@@ -8,9 +8,12 @@ import '../../features/home/home_screen.dart';
 import '../../features/staff_auth/staff_login_screen.dart';
 import '../../features/staff_auth/staff_2fa_screen.dart';
 import '../../features/staff_auth/staff_dashboard_screen.dart';
+import '../../features/staff_auth/staff_2fa_enroll_screen.dart';
 import '../../features/verification/patient_verification_screen.dart';
 import '../../features/verification/validation_success_screen.dart';
 import '../../features/verification/counterfeit_catch_screen.dart';
+import '../../features/verification/report_detail_screen.dart';
+import '../../features/reports/my_reports_screen.dart';
 import '../../features/history/history_screen.dart';
 import '../../features/profile/profile_screen.dart';
 import '../../features/staff_scan/staff_scan_screen.dart';
@@ -48,6 +51,19 @@ GoRoute(
     final code = extra['code'] as String? ?? 'Unknown';
     return CounterfeitCatchScreen(batchCode: code);
   },
+),GoRoute(
+  path: '/report-detail',
+  name: 'reportDetail',
+  builder: (context, state) {
+    final code = state.extra as String? ?? 'Unknown';
+    return ReportDetailScreen(batchCode: code);
+  },
+),
+
+GoRoute(
+  path: '/my-reports',
+  name: 'myReports',
+  builder: (context, state) => const MyReportsScreen(),
 ),
     
     GoRoute(
@@ -61,6 +77,10 @@ GoRoute(
       path: '/staff-2fa',
       name: 'staff2FA',
       builder: (context, state) => const Staff2FAScreen(),
+    ),  GoRoute(
+      path: '/staff-2fa-enroll',
+      name: 'staff2FAEnroll',
+      builder: (context, state) => const Staff2FAEnrollScreen(),
     ),
     GoRoute(
       path: '/staff-dashboard',
