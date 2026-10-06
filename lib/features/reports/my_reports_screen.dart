@@ -33,8 +33,8 @@ class MyReportsScreen extends StatelessWidget {
                   return Center(
                     child: Padding(
                       padding: const EdgeInsets.all(24.0),
-                      child: Text(
-                        'Could not load your reports.',
+                      child: SelectableText(
+                        'Could not load your reports:\n${snapshot.error}',
                         textAlign: TextAlign.center,
                         style: AppTextStyles.body.copyWith(color: AppColors.textSecondary),
                       ),

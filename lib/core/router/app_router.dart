@@ -16,11 +16,15 @@ import '../../features/verification/report_detail_screen.dart';
 import '../../features/reports/my_reports_screen.dart';
 import '../../features/history/history_screen.dart';
 import '../../features/profile/profile_screen.dart';
+import '../../features/profile/edit_profile_screen.dart';
+import '../../features/profile/privacy_security_screen.dart';
 import '../../features/staff_scan/staff_scan_screen.dart';
 import '../../features/custody/transfer_of_custody_screen.dart';
 import '../../features/inventory/inventory_screen.dart';
 import '../../features/dispatches/dispatches_screen.dart';
 import '../../features/audit/audit_screen.dart';
+import '../../features/profile/notification_settings_screen.dart';
+import '../../features/profile/help_support_screen.dart';
 
 
 final GoRouter appRouter = GoRouter(
@@ -77,7 +81,8 @@ GoRoute(
       path: '/staff-2fa',
       name: 'staff2FA',
       builder: (context, state) => const Staff2FAScreen(),
-    ),  GoRoute(
+    ),  
+    GoRoute(
       path: '/staff-2fa-enroll',
       name: 'staff2FAEnroll',
       builder: (context, state) => const Staff2FAEnrollScreen(),
@@ -131,6 +136,26 @@ GoRoute(
       path: '/profile',
       name: 'profile',
       builder: (context, state) => const ProfileScreen(),
+    ),
+    GoRoute(
+      path: '/privacy-security',
+      name: 'privacySecurity',
+      builder: (context, state) => const PrivacySecurityScreen(),
+    ),
+    GoRoute(
+      path: '/edit-profile',
+      name: 'editProfile',
+      builder: (context, state) => const EditProfileScreen(),
+    ),
+    GoRoute(
+      path: '/notification-settings',
+      name: 'notificationSettings',
+      builder: (context, state) => const NotificationSettingsScreen(),
+    ),
+    GoRoute(
+      path: '/help-support',
+      name: 'helpSupport',
+      builder: (context, state) => const HelpSupportScreen(),
     ),
 
     GoRoute(

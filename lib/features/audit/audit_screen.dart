@@ -1,29 +1,73 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../../core/theme/app_colors.dart';
 import '../../services/auth_service.dart';
 import '../../shared/widgets/staff_bottom_nav.dart';
 
-enum AuditType { scan, transfer, alert }
+enum AuditType { scan, transfer }
 
 class AuditEntry {
   final AuditType type;
   final String title;
   final String batchCode;
-  final String staffName;
-  final String time;
-  final String txHash;
-  final String day; // 'Today' or 'Yesterday'
+  final String staffLabel;
+  final DateTime? timestamp;
 
   const AuditEntry({
     required this.type,
     required this.title,
     required this.batchCode,
-    required this.staffName,
-    required this.time,
-    required this.txHash,
-    required this.day,
+    required this.staffLabel,
+    required this.timestamp,
   });
+
+  factory AuditEntry.fromScanLog(QueryDocumentSnapshot<Map<String, dynamic>> doc) {
+    final data = doc.data();
+    return AuditEntry(
+      type: AuditType.scan,
+      title: 'Package scanned — ${data['status'] ?? 'Logged'}',
+      batchCode: data['lotNumber'] as String? ?? 'Unknown',
+      staffLabel: _shortUid(data['scannedBy'] as String?),
+      timestamp: (data['scannedAt'] as Timestamp?)?.toDate(),
+    );
+  }
+
+  factory AuditEntry.fromCustodyEvent(QueryDocumentSnapshot<Map<String, dynamic>> doc) {
+    final data = doc.data();
+    return AuditEntry(
+      type: AuditType.transfer,
+      title: data['action'] as String? ?? 'Custody event',
+      batchCode: data['batchCode'] as String? ?? 'Unknown',
+      staffLabel: _shortUid(data['staffUid'] as String?),
+      timestamp: (data['timestamp'] as Timestamp?)?.toDate(),
+    );
+  }
+
+  static String _shortUid(String? uid) {
+    if (uid == null || uid.isEmpty) return 'Unknown staff';
+    return 'Staff #${uid.substring(0, uid.length < 6 ? uid.length : 6)}';
+  }
+
+  String get dayLabel {
+    if (timestamp == null) return 'Unknown date';
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final entryDay = DateTime(timestamp!.year, timestamp!.month, timestamp!.day);
+    final diff = today.difference(entryDay).inDays;
+    if (diff == 0) return 'Today';
+    if (diff == 1) return 'Yesterday';
+    return '${timestamp!.day}/${timestamp!.month}/${timestamp!.year}';
+  }
+
+  String get timeLabel {
+    if (timestamp == null) return '—';
+    final diff = DateTime.now().difference(timestamp!);
+    if (diff.inMinutes < 1) return 'just now';
+    if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
+    if (diff.inHours < 24) return '${diff.inHours}h ago';
+    return '${diff.inDays}d ago';
+  }
 }
 
 class AuditScreen extends StatefulWidget {
@@ -36,184 +80,159 @@ class AuditScreen extends StatefulWidget {
 class _AuditScreenState extends State<AuditScreen> {
   String _activeFilter = 'All';
 
-  // TODO: replace with a real Firestore query on an 'audit_log' collection,
-  // ordered by timestamp descending, filtered by type and depot.
-  final List<AuditEntry> _entries = const [
-    AuditEntry(
-      type: AuditType.transfer,
-      title: 'Custody transfer confirmed',
-      batchCode: 'LOT-ZA-99420',
-      staffName: 'Husain M.',
-      time: '10m ago',
-      txHash: '0x8f3a…c21d',
-      day: 'Today',
-    ),
-    AuditEntry(
-      type: AuditType.scan,
-      title: 'Package scanned',
-      batchCode: 'LOT-ZA-88219',
-      staffName: 'Husain M.',
-      time: '42m ago',
-      txHash: '0x2b91…7fa4',
-      day: 'Today',
-    ),
-    AuditEntry(
-      type: AuditType.alert,
-      title: 'Temperature alert flagged',
-      batchCode: 'LOT-ZA-77103',
-      staffName: 'System',
-      time: '1h ago',
-      txHash: '0x91cd…3e0b',
-      day: 'Today',
-    ),
-    AuditEntry(
-      type: AuditType.transfer,
-      title: 'Batch dispatched',
-      batchCode: 'DSP-20902',
-      staffName: 'Sipho N.',
-      time: '5:12 PM',
-      txHash: '0x44aa…19f2',
-      day: 'Yesterday',
-    ),
-  ];
-
-  IconData _iconFor(AuditType type) {
-    switch (type) {
-      case AuditType.scan:
-        return Icons.qr_code_scanner;
-      case AuditType.transfer:
-        return Icons.swap_horiz;
-      case AuditType.alert:
-        return Icons.warning_amber_rounded;
-    }
-  }
-
-  Color _colorFor(AuditType type) {
-    return type == AuditType.alert ? AppColors.danger : AppColors.primary;
-  }
-
   bool _matchesFilter(AuditEntry entry) {
     if (_activeFilter == 'All') return true;
     if (_activeFilter == 'Scans') return entry.type == AuditType.scan;
     if (_activeFilter == 'Transfers') return entry.type == AuditType.transfer;
-    if (_activeFilter == 'Alerts') return entry.type == AuditType.alert;
     return true;
   }
 
+  IconData _iconFor(AuditType type) => type == AuditType.scan ? Icons.qr_code_scanner : Icons.swap_horiz;
+
   @override
   Widget build(BuildContext context) {
-    final filtered = _entries.where(_matchesFilter).toList();
-    final days = filtered.map((e) => e.day).toSet().toList();
-
     return Scaffold(
       backgroundColor: AppColors.background,
       body: SafeArea(
-        child: Column(
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Container(
-                        width: 40,
-                        height: 40,
-                        decoration: BoxDecoration(
-                          color: AppColors.primary.withOpacity(0.10),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: const Icon(Icons.receipt_long_outlined, color: AppColors.primary, size: 22),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text('WAREHOUSE FLOOR',
-                                style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 1.2, color: AppColors.textSecondary)),
-                            Text('Audit Log', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: AppColors.textPrimary)),
-                          ],
-                        ),
-                      ),
-                      TextButton(
-                        onPressed: () {
-                          // TODO: export audit report once backend exists.
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('Export — coming soon')),
-                          );
-                        },
-                        child: Text('Export', style: TextStyle(fontSize: 12, color: AppColors.primary, fontWeight: FontWeight.bold)),
-                      ),
-                      IconButton(
-                        onPressed: () async {
-                          await AuthService().signOut();
-                          if (context.mounted) context.go('/staff-login');
-                        },
-                        icon: Icon(Icons.logout_rounded, color: AppColors.textPrimary),
-                      ),
-                    ],
-                  ),
-                  Text('Every action recorded on the ledger', style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
-                  const SizedBox(height: 14),
-
-                  SizedBox(
-                    height: 36,
-                    child: ListView(
-                      scrollDirection: Axis.horizontal,
-                      children: ['All', 'Scans', 'Transfers', 'Alerts'].map((label) {
-                        final isSelected = _activeFilter == label;
-                        return Padding(
-                          padding: const EdgeInsets.only(right: 8),
-                          child: ChoiceChip(
-                            label: Text(label, style: TextStyle(fontSize: 12, color: isSelected ? Colors.white : AppColors.textPrimary)),
-                            selected: isSelected,
-                            selectedColor: AppColors.primary,
-                            backgroundColor: AppColors.surface,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(20),
-                              side: BorderSide(color: AppColors.textSecondary.withOpacity(0.15)),
-                            ),
-                            onSelected: (_) => setState(() => _activeFilter = label),
-                          ),
-                        );
-                      }).toList(),
+        child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+          stream: FirebaseFirestore.instance.collection('scan_logs').snapshots(),
+          builder: (context, scanSnap) {
+            return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+              stream: FirebaseFirestore.instance.collection('custody_events').snapshots(),
+              builder: (context, custodySnap) {
+                if (scanSnap.connectionState == ConnectionState.waiting ||
+                    custodySnap.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+                if (scanSnap.hasError || custodySnap.hasError) {
+                  return Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(24.0),
+                      child: SelectableText('Error loading audit log:\n${scanSnap.error ?? custodySnap.error}'),
                     ),
-                  ),
-                  const SizedBox(height: 16),
+                  );
+                }
 
-                  Row(
-                    children: [
-                      Expanded(child: _StatCard(label: 'Entries Today', value: '${_entries.where((e) => e.day == 'Today').length}', color: AppColors.textPrimary)),
-                      const SizedBox(width: 10),
-                      Expanded(child: _StatCard(label: 'Flagged', value: '${_entries.where((e) => e.type == AuditType.alert).length}', color: AppColors.danger)),
-                      const SizedBox(width: 10),
-                      Expanded(child: _StatCard(label: 'Synced to Ledger', value: '${_entries.length}', color: AppColors.primary)),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                ],
-              ),
-            ),
-            Expanded(
-              child: ListView(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                children: [
-                  for (final day in days) ...[
+                final entries = <AuditEntry>[
+                  ...(scanSnap.data?.docs ?? []).map(AuditEntry.fromScanLog),
+                  ...(custodySnap.data?.docs ?? []).map(AuditEntry.fromCustodyEvent),
+                ]..sort((a, b) => (b.timestamp ?? DateTime(0)).compareTo(a.timestamp ?? DateTime(0)));
+
+                final todayCount = entries.where((e) => e.dayLabel == 'Today').length;
+                final scanCount = entries.where((e) => e.type == AuditType.scan).length;
+                final transferCount = entries.where((e) => e.type == AuditType.transfer).length;
+                final filtered = entries.where(_matchesFilter).toList();
+                final days = filtered.map((e) => e.dayLabel).toSet().toList();
+
+                return Column(
+                  children: [
                     Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 8),
-                      child: Text(day, style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: AppColors.textSecondary)),
+                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Container(
+                                width: 40,
+                                height: 40,
+                                decoration: BoxDecoration(
+                                  color: AppColors.primary.withOpacity(0.10),
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: const Icon(Icons.receipt_long_outlined, color: AppColors.primary, size: 22),
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text('WAREHOUSE FLOOR',
+                                        style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 1.2, color: AppColors.textSecondary)),
+                                    Text('Audit Log', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: AppColors.textPrimary)),
+                                  ],
+                                ),
+                              ),
+                              TextButton(
+                                onPressed: () {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(content: Text('Export — coming soon')),
+                                  );
+                                },
+                                child: Text('Export', style: TextStyle(fontSize: 12, color: AppColors.primary, fontWeight: FontWeight.bold)),
+                              ),
+                              IconButton(
+                                onPressed: () async {
+                                  await AuthService().signOut();
+                                  if (context.mounted) context.go('/staff-login');
+                                },
+                                icon: Icon(Icons.logout_rounded, color: AppColors.textPrimary),
+                              ),
+                            ],
+                          ),
+                          Text('Every scan and transfer recorded', style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+                          const SizedBox(height: 14),
+                          SizedBox(
+                            height: 36,
+                            child: ListView(
+                              scrollDirection: Axis.horizontal,
+                              children: ['All', 'Scans', 'Transfers'].map((label) {
+                                final isSelected = _activeFilter == label;
+                                return Padding(
+                                  padding: const EdgeInsets.only(right: 8),
+                                  child: ChoiceChip(
+                                    label: Text(label, style: TextStyle(fontSize: 12, color: isSelected ? Colors.white : AppColors.textPrimary)),
+                                    selected: isSelected,
+                                    selectedColor: AppColors.primary,
+                                    backgroundColor: AppColors.surface,
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(20),
+                                      side: BorderSide(color: AppColors.textSecondary.withOpacity(0.15)),
+                                    ),
+                                    onSelected: (_) => setState(() => _activeFilter = label),
+                                  ),
+                                );
+                              }).toList(),
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                          Row(
+                            children: [
+                              Expanded(child: _StatCard(label: 'Entries Today', value: '$todayCount', color: AppColors.textPrimary)),
+                              const SizedBox(width: 10),
+                              Expanded(child: _StatCard(label: 'Scans', value: '$scanCount', color: AppColors.tertiary)),
+                              const SizedBox(width: 10),
+                              Expanded(child: _StatCard(label: 'Transfers', value: '$transferCount', color: AppColors.primary)),
+                            ],
+                          ),
+                          const SizedBox(height: 12),
+                        ],
+                      ),
                     ),
-                    ...filtered.where((e) => e.day == day).map((entry) => Padding(
-                          padding: const EdgeInsets.only(bottom: 10),
-                          child: _AuditCard(entry: entry, icon: _iconFor(entry.type), color: _colorFor(entry.type)),
-                        )),
+                    Expanded(
+                      child: filtered.isEmpty
+                          ? Center(child: Text('No activity yet.', style: TextStyle(color: AppColors.textSecondary)))
+                          : ListView(
+                              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                              children: [
+                                for (final day in days) ...[
+                                  Padding(
+                                    padding: const EdgeInsets.symmetric(vertical: 8),
+                                    child: Text(day, style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: AppColors.textSecondary)),
+                                  ),
+                                  ...filtered.where((e) => e.dayLabel == day).map((entry) => Padding(
+                                        padding: const EdgeInsets.only(bottom: 10),
+                                        child: _AuditCard(entry: entry, icon: _iconFor(entry.type), color: AppColors.primary),
+                                      )),
+                                ],
+                              ],
+                            ),
+                    ),
                   ],
-                ],
-              ),
-            ),
-          ],
+                );
+              },
+            );
+          },
         ),
       ),
       bottomNavigationBar: const StaffBottomNav(currentIndex: 4),
@@ -281,26 +300,7 @@ class _AuditCard extends StatelessWidget {
               children: [
                 Text(entry.title, style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: AppColors.textPrimary)),
                 const SizedBox(height: 2),
-                Text('${entry.batchCode} • ${entry.staffName} • ${entry.time}', style: TextStyle(fontSize: 11, color: AppColors.textSecondary)),
-                const SizedBox(height: 6),
-                Row(
-                  children: [
-                    Text(entry.txHash, style: TextStyle(fontSize: 10, color: AppColors.textSecondary, fontFamily: 'monospace')),
-                    const SizedBox(width: 8),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                      decoration: BoxDecoration(color: AppColors.primary.withOpacity(0.12), borderRadius: BorderRadius.circular(6)),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.verified, size: 10, color: AppColors.primary),
-                          const SizedBox(width: 3),
-                          Text('Verified on Hedera', style: TextStyle(fontSize: 8, fontWeight: FontWeight.w600, color: AppColors.primary)),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
+                Text('${entry.batchCode} • ${entry.staffLabel} • ${entry.timeLabel}', style: TextStyle(fontSize: 11, color: AppColors.textSecondary)),
               ],
             ),
           ),

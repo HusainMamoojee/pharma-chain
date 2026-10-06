@@ -51,27 +51,28 @@ class ProfileScreen extends StatelessWidget {
               icon: Icons.person_outline,
               label: 'Edit Profile',
               onTap: () {
+                context.push('/edit-profile');
               },
             ),
             _ProfileTile(
               icon: Icons.notifications_outlined,
               label: 'Notifications',
               onTap: () {
-                // TODO: notification preferences
+                context.push('/notification-settings');
               },
             ),
             _ProfileTile(
               icon: Icons.privacy_tip_outlined,
               label: 'Privacy & Security',
               onTap: () {
-                // TODO: privacy settings screen
+                context.push('/privacy-security');
               },
             ),
             _ProfileTile(
               icon: Icons.help_outline,
               label: 'Help & Support',
               onTap: () {
-                // TODO: support/FAQ screen
+                context.push('/help-support');
               },
             ),
             _ProfileTile(
