@@ -4,13 +4,21 @@ import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_text_styles.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import '../../shared/widgets/staff_name_text.dart';
 
 class CustodyStage {
   final String label;
-  final String subLabel;
+  final String? staffUid;
+  final String when;
   final bool completed;
 
-  const CustodyStage({required this.label, required this.subLabel, required this.completed});
+
+  const CustodyStage({
+    required this.label,
+    required this.staffUid,
+    required this.when,
+    required this.completed,
+  });
 }
 
 class TransferOfCustodyScreen extends StatefulWidget {
@@ -49,14 +57,10 @@ class _TransferOfCustodyScreenState extends State<TransferOfCustodyScreen> {
     return docs;
   }
 
-  CustodyStage _stageFrom(Map<String, dynamic> data) {
+   CustodyStage _stageFrom(Map<String, dynamic> data) {
     final action = data['action'] as String? ?? 'Event';
     final uid = data['staffUid'] as String?;
     final ts = data['timestamp'] as Timestamp?;
-
-    final who = uid == null
-        ? 'Unknown staff'
-        : 'Staff ${uid.substring(0, uid.length < 6 ? uid.length : 6)}';
 
     String when = 'Just now';
     if (ts != null) {
@@ -65,7 +69,7 @@ class _TransferOfCustodyScreenState extends State<TransferOfCustodyScreen> {
       when = '${two(d.day)}/${two(d.month)}/${d.year} ${two(d.hour)}:${two(d.minute)}';
     }
 
-    return CustodyStage(label: action, subLabel: '$who • $when', completed: true);
+    return CustodyStage(label: action, staffUid: uid, when: when, completed: true);
   }
 
 
@@ -297,8 +301,9 @@ class _CustodyTimelineTile extends StatelessWidget {
                 children: [
                   Text(stage.label, style: AppTextStyles.label.copyWith(fontSize: 14)),
                   const SizedBox(height: 2),
-                  Text(
-                    stage.subLabel,
+                 StaffNameText(
+                    uid: stage.staffUid,
+                    suffix: ' • ${stage.when}',
                     style: AppTextStyles.body.copyWith(fontSize: 12, color: AppColors.textSecondary),
                   ),
                 ],

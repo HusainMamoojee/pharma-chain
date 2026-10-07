@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import '../../core/theme/app_colors.dart';
 import '../../services/auth_service.dart';
 import '../../shared/widgets/staff_bottom_nav.dart';
+import '../../shared/widgets/staff_name_text.dart';
 
 enum AuditType { scan, transfer }
 
@@ -11,14 +12,14 @@ class AuditEntry {
   final AuditType type;
   final String title;
   final String batchCode;
-  final String staffLabel;
+  final String? staffUid;
   final DateTime? timestamp;
 
   const AuditEntry({
     required this.type,
     required this.title,
     required this.batchCode,
-    required this.staffLabel,
+    required this.staffUid,
     required this.timestamp,
   });
 
@@ -28,7 +29,7 @@ class AuditEntry {
       type: AuditType.scan,
       title: 'Package scanned — ${data['status'] ?? 'Logged'}',
       batchCode: data['lotNumber'] as String? ?? 'Unknown',
-      staffLabel: _shortUid(data['scannedBy'] as String?),
+      staffUid: data['scannedBy'] as String?,
       timestamp: (data['scannedAt'] as Timestamp?)?.toDate(),
     );
   }
@@ -39,14 +40,9 @@ class AuditEntry {
       type: AuditType.transfer,
       title: data['action'] as String? ?? 'Custody event',
       batchCode: data['batchCode'] as String? ?? 'Unknown',
-      staffLabel: _shortUid(data['staffUid'] as String?),
+      staffUid: data['staffUid'] as String?,
       timestamp: (data['timestamp'] as Timestamp?)?.toDate(),
     );
-  }
-
-  static String _shortUid(String? uid) {
-    if (uid == null || uid.isEmpty) return 'Unknown staff';
-    return 'Staff #${uid.substring(0, uid.length < 6 ? uid.length : 6)}';
   }
 
   String get dayLabel {
@@ -300,7 +296,12 @@ class _AuditCard extends StatelessWidget {
               children: [
                 Text(entry.title, style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: AppColors.textPrimary)),
                 const SizedBox(height: 2),
-                Text('${entry.batchCode} • ${entry.staffLabel} • ${entry.timeLabel}', style: TextStyle(fontSize: 11, color: AppColors.textSecondary)),
+                  StaffNameText(
+                  uid: entry.staffUid,
+                  prefix: '${entry.batchCode} • ',
+                  suffix: ' • ${entry.timeLabel}',
+                  style: TextStyle(fontSize: 11, color: AppColors.textSecondary),
+                ),
               ],
             ),
           ),

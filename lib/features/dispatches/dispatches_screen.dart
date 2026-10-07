@@ -4,20 +4,22 @@ import 'package:go_router/go_router.dart';
 import '../../core/theme/app_colors.dart';
 import '../../services/auth_service.dart';
 import '../../shared/widgets/staff_bottom_nav.dart';
+import '../../shared/widgets/staff_name_text.dart';
 
 class DispatchRecord {
   final String batchCode;
   final String action;
   final bool isOutgoing;
   final String timeInfo;
+  final String? staffUid;
 
   const DispatchRecord({
-    required this.batchCode,
+   required this.batchCode,
     required this.action,
     required this.isOutgoing,
     required this.timeInfo,
+    this.staffUid,
   });
-
   factory DispatchRecord.fromDoc(QueryDocumentSnapshot<Map<String, dynamic>> doc) {
     final data = doc.data();
     final action = data['action'] as String? ?? 'Unknown action';
@@ -27,6 +29,7 @@ class DispatchRecord {
       action: action,
       isOutgoing: action == 'Transfer initiated',
       timeInfo: timestamp != null ? _timeAgo(timestamp) : '—',
+      staffUid: data['staffUid'] as String?,
     );
   }
 
@@ -275,9 +278,12 @@ class _DispatchCard extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('Batch #${record.batchCode}', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: AppColors.textPrimary)),
-                const SizedBox(height: 2),
-                Text('${record.action} • ${record.timeInfo}', style: TextStyle(fontSize: 11, color: AppColors.textSecondary)),
+                                StaffNameText(
+                  uid: record.staffUid,
+                  prefix: '${record.action} • ',
+                  suffix: ' • ${record.timeInfo}',
+                  style: TextStyle(fontSize: 11, color: AppColors.textSecondary),
+                ),
               ],
             ),
           ),
