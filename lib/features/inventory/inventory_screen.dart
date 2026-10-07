@@ -94,6 +94,11 @@ class InventoryScreen extends StatefulWidget {
 
 class _InventoryScreenState extends State<InventoryScreen> {
   String _activeFilter = 'All Batches';
+  String _searchQuery = '';
+
+  // Created once so typing in the search box doesn't restart the stream.
+  final Stream<QuerySnapshot<Map<String, dynamic>>> _batchesStream =
+      FirebaseFirestore.instance.collection('batches').snapshots();
 
   Color _statusColor(BatchStatus status) {
     switch (status) {
@@ -107,6 +112,12 @@ class _InventoryScreenState extends State<InventoryScreen> {
   }
 
   bool _matchesFilter(InventoryBatch batch) {
+    final query = _searchQuery.trim().toLowerCase();
+    if (query.isNotEmpty) {
+      final haystack = '${batch.lotNumber} ${batch.drugName}'.toLowerCase();
+      if (!haystack.contains(query)) return false;
+    }
+
     switch (_activeFilter) {
       case 'In Stock':
         return batch.status == BatchStatus.inStock;
@@ -125,7 +136,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
       backgroundColor: AppColors.background,
       body: SafeArea(
         child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-          stream: FirebaseFirestore.instance.collection('batches').snapshots(),
+          stream: _batchesStream,
           builder: (context, snapshot) {
             if (snapshot.connectionState == ConnectionState.waiting) {
               return const Center(child: CircularProgressIndicator());
@@ -207,8 +218,9 @@ class _InventoryScreenState extends State<InventoryScreen> {
                                   const SizedBox(width: 8),
                                   Expanded(
                                     child: TextField(
+                                      onChanged: (value) => setState(() => _searchQuery = value),
                                       decoration: InputDecoration(
-                                        hintText: 'Scan barcode or search batch, drug...',
+                                        hintText: 'Search batch code or drug name',
                                         hintStyle: TextStyle(fontSize: 13, color: AppColors.textSecondary),
                                         border: InputBorder.none,
                                         isDense: true,
