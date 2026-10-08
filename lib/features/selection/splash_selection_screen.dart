@@ -30,6 +30,18 @@ class SplashSelectionScreen extends StatelessWidget {
                 mainAxisAlignment: MainAxisAlignment.center,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
+                  Center(
+                    child: Container(
+                      width: 64,
+                      height: 64,
+                      decoration: BoxDecoration(
+                        color: AppColors.primary,
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                       child: const Icon(Icons.verified_outlined, color: Colors.white, size: 34),
+                    ),
+                  ),
+                  const SizedBox(height: 20),
                   Text(
                     'Welcome to PharmaChain',
                     style: AppTextStyles.headline,
@@ -37,23 +49,24 @@ class SplashSelectionScreen extends StatelessWidget {
                   ),
                   const SizedBox(height: 10),
                   Text(
-                    'Tell us who you are so we can set things up correctly.',
+                    "Choose how you'll use PharmaChain.",
                     style: AppTextStyles.body.copyWith(color: AppColors.textSecondary),
                     textAlign: TextAlign.center,
                   ),
-                  const SizedBox(height: 48),
+                  //Icons
+                  const SizedBox(height: 40),
                   _SelectionCard(
-                    icon: Icons.person_outline,
+                    icon: Icons.medication_outlined,
                     title: 'Patient / Consumer',
-                    subtitle: 'Verify medicine and view supply chain history',
+                    subtitle: 'Check your medicine is genuine and see where it has been.',
                     accentColor: AppColors.primary,
                     onTap: () => context.go('/login'),
                   ),
                   const SizedBox(height: 20),
                   _SelectionCard(
-                    icon: Icons.admin_panel_settings_outlined,
-                    title: 'Staff / Admin',
-                    subtitle: 'Manage batches, stakeholders, and governance',
+                    icon: Icons.qr_code_scanner,
+                    title: 'Staff',
+                    subtitle: 'Scan, hand over and track batches on the warehouse floor.',
                     accentColor: AppColors.tertiary,
                     onTap: () => context.go('/staff-login'),
                   ),
@@ -92,50 +105,56 @@ class _SelectionCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
-      borderRadius: BorderRadius.circular(20),
-      onTap: onTap,
-      child: ClipRRect(
+    return Semantics(
+      button: true,
+      label: '$title. $subtitle',
+      excludeSemantics: true,
+      child: InkWell(
         borderRadius: BorderRadius.circular(20),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
-          child: Container(
-            padding: const EdgeInsets.all(20),
-            decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.45),
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: Colors.white.withOpacity(0.6)),
-            ),
-            child: Row(
-              children: [
-                Container(
-                  width: 52,
-                  height: 52,
-                  decoration: BoxDecoration(
-                    color: accentColor.withOpacity(0.18),
-                    borderRadius: BorderRadius.circular(14),
+        onTap: onTap,
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(20),
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
+            child: Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.65),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: AppColors.textSecondary.withOpacity(0.18)),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    width: 52,
+                    height: 52,
+                    decoration: BoxDecoration(
+                      color: accentColor.withOpacity(0.18),
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child: Icon(icon, color: accentColor, size: 26),
                   ),
-                  child: Icon(icon, color: accentColor, size: 26),
-                ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(title, style: AppTextStyles.label.copyWith(fontSize: 16)),
-                      const SizedBox(height: 4),
-                      Text(
-                        subtitle,
-                        style: AppTextStyles.body.copyWith(
-                          fontSize: 13,
-                          color: AppColors.textSecondary,
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(title, style: AppTextStyles.label.copyWith(fontSize: 16)),
+                        const SizedBox(height: 4),
+                        Text(
+                          subtitle,
+                          style: AppTextStyles.body.copyWith(
+                            fontSize: 13,
+                            color: AppColors.textSecondary,
+                          ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
-                ),
-                Icon(Icons.arrow_forward_ios_rounded, size: 16, color: accentColor),
-              ],
+                  const SizedBox(width: 8),
+                  Icon(Icons.arrow_forward_ios_rounded, size: 18, color: accentColor),
+                ],
+              ),
             ),
           ),
         ),
