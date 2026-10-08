@@ -60,7 +60,7 @@ class SplashSelectionScreen extends StatelessWidget {
                     title: 'Patient / Consumer',
                     subtitle: 'Check your medicine is genuine and see where it has been.',
                     accentColor: AppColors.primary,
-                    onTap: () => context.go('/login'),
+                    onTap: () => context.push('/login'),
                   ),
                   const SizedBox(height: 20),
                   _SelectionCard(
@@ -68,7 +68,7 @@ class SplashSelectionScreen extends StatelessWidget {
                     title: 'Staff',
                     subtitle: 'Scan, hand over and track batches on the warehouse floor.',
                     accentColor: AppColors.tertiary,
-                    onTap: () => context.go('/staff-login'),
+                    onTap: () => context.push('/staff-login'),
                   ),
                 ],
               ),
