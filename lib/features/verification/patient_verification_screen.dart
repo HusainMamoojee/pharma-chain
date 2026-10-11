@@ -16,7 +16,12 @@ class PatientVerificationScreen extends StatefulWidget {
 class _PatientVerificationScreenState extends State<PatientVerificationScreen> {
   final MobileScannerController _scannerController = MobileScannerController();
   final TextEditingController _manualCodeController = TextEditingController();
+
   bool _isProcessing = false;
+  bool _sheetOpen = false;
+  bool _scannerStopped = false;
+  bool _cameraFailed = false;
+  bool _permissionDenied = false;
 
   @override
   void dispose() {
@@ -25,57 +30,135 @@ class _PatientVerificationScreenState extends State<PatientVerificationScreen> {
     super.dispose();
   }
 
+  // ---------------------------------------------------------------
+  // SCANNING + VERIFICATION
+  // ---------------------------------------------------------------
+
   void _onDetect(BarcodeCapture capture) {
-    if (_isProcessing) return;
-    final barcode = capture.barcodes.firstOrNull;
-    final code = barcode?.rawValue;
+    if (_isProcessing || _sheetOpen) return;
+    final code = capture.barcodes.firstOrNull?.rawValue?.trim();
     if (code == null || code.isEmpty) return;
 
     setState(() => _isProcessing = true);
     _scannerController.stop();
+    _scannerStopped = true;
     _verifyCode(code);
   }
 
   void _handleManualSubmit() {
     final code = _manualCodeController.text.trim();
     if (code.isEmpty) return;
+    _manualCodeController.clear();
     setState(() => _isProcessing = true);
     _verifyCode(code);
   }
 
-   Future<void> _verifyCode(String code) async {
-    final doc = await FirebaseFirestore.instance.collection('batches').doc(code).get();
+  Future<void> _verifyCode(String rawCode) async {
+    final code = rawCode.trim();
+    String resolvedCode = code;
+    DocumentSnapshot<Map<String, dynamic>>? doc;
 
+    try {
+      // Firestore document IDs can't contain "/", so a code like a URL
+      // can never match a batch. Treat it as not found instead of crashing.
+      if (code.isNotEmpty && !code.contains('/')) {
+        final batches = FirebaseFirestore.instance.collection('batches');
+        doc = await batches.doc(code).get();
+
+        // Batch codes are stored upper-case; be forgiving about typing.
+        if (!doc.exists && code != code.toUpperCase()) {
+          final alt = await batches.doc(code.toUpperCase()).get();
+          if (alt.exists) {
+            doc = alt;
+            resolvedCode = code.toUpperCase();
+          }
+        }
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("Couldn't check that code. Check your connection and try again."),
+        ),
+      );
+      await _resetAfterAttempt();
+      return;
+    }
+
+    final exists = doc?.exists ?? false;
+
+    // Record the attempt. A failure here shouldn't hide the result.
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid != null) {
-      await FirebaseFirestore.instance.collection('verifications').add({
-        'userId': uid,
-        'batchCode': code,
-        'productName': doc.data()?['productName'] as String? ?? code,
-        'status': doc.exists ? 'Authentic' : 'Under Review',
-        'verifiedAt': FieldValue.serverTimestamp(),
-      });
+      try {
+        await FirebaseFirestore.instance.collection('verifications').add({
+          'userId': uid,
+          'batchCode': resolvedCode,
+          'productName': doc?.data()?['productName'] as String? ?? resolvedCode,
+          'status': exists ? 'Authentic' : 'Under Review',
+          'verifiedAt': FieldValue.serverTimestamp(),
+        });
+      } catch (e) {
+        debugPrint('Could not save verification: $e');
+      }
     }
 
     if (!mounted) return;
 
-    if (doc.exists) {
-      context.push('/validation-success', extra: {'code': code, 'data': doc.data()});
+    if (exists) {
+      await context.push('/validation-success',
+          extra: {'code': resolvedCode, 'data': doc!.data()});
     } else {
-      context.push('/counterfeit-catch', extra: {'code': code});
+      await context.push('/counterfeit-catch', extra: {'code': resolvedCode});
     }
 
-    setState(() => _isProcessing = false);
+    await _resetAfterAttempt();
   }
-  void _showManualEntrySheet() {
-    showModalBottomSheet(
+
+  /// Hide the spinner and bring the camera back after a result screen.
+  Future<void> _resetAfterAttempt() async {
+    if (!mounted) return;
+    setState(() => _isProcessing = false);
+
+    if (_scannerStopped && !_cameraFailed) {
+      try {
+        await _scannerController.start();
+        _scannerStopped = false;
+      } catch (e) {
+        debugPrint('Could not restart scanner: $e');
+      }
+    }
+  }
+
+  void _close() {
+    if (context.canPop()) {
+      context.pop();
+    } else {
+      context.go('/home');
+    }
+  }
+
+  // ---------------------------------------------------------------
+  // MANUAL ENTRY
+  // ---------------------------------------------------------------
+
+  Future<void> _showManualEntrySheet() async {
+    _sheetOpen = true;
+
+    await showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
-      builder: (context) {
+      builder: (sheetContext) {
+        void submit() {
+          if (_manualCodeController.text.trim().isEmpty) return;
+          Navigator.of(sheetContext).pop();
+          _handleManualSubmit();
+        }
+
         return Padding(
           padding: EdgeInsets.only(
-            bottom: MediaQuery.of(context).viewInsets.bottom,
+            bottom: MediaQuery.of(sheetContext).viewInsets.bottom,
           ),
           child: Container(
             padding: const EdgeInsets.all(24),
@@ -87,7 +170,8 @@ class _PatientVerificationScreenState extends State<PatientVerificationScreen> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Text('Enter Code Manually', style: AppTextStyles.headline.copyWith(fontSize: 20)),
+                Text('Enter Code Manually',
+                    style: AppTextStyles.headline.copyWith(fontSize: 20)),
                 const SizedBox(height: 8),
                 Text(
                   'Type the batch code printed on the packaging',
@@ -96,23 +180,29 @@ class _PatientVerificationScreenState extends State<PatientVerificationScreen> {
                 const SizedBox(height: 20),
                 TextField(
                   controller: _manualCodeController,
+                  autofocus: true,
                   textCapitalization: TextCapitalization.characters,
+                  textInputAction: TextInputAction.go,
+                  onSubmitted: (_) => submit(),
                   decoration: InputDecoration(
                     hintText: 'e.g. BATCH-4521-ZA',
                     filled: true,
                     fillColor: AppColors.background,
-                    border: OutlineInputBorder(
+                    enabledBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(14),
-                      borderSide: BorderSide.none,
+                      borderSide: BorderSide(
+                        color: AppColors.textSecondary.withOpacity(0.3),
+                      ),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(14),
+                      borderSide: BorderSide(color: AppColors.primary, width: 2),
                     ),
                   ),
                 ),
                 const SizedBox(height: 20),
                 ElevatedButton(
-                  onPressed: () {
-                    Navigator.of(context).pop();
-                    _handleManualSubmit();
-                  },
+                  onPressed: submit,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: AppColors.primary,
                     foregroundColor: Colors.white,
@@ -121,13 +211,57 @@ class _PatientVerificationScreenState extends State<PatientVerificationScreen> {
                       borderRadius: BorderRadius.circular(14),
                     ),
                   ),
-                  child: const Text('Verify Code'),
+                  child: const Text(
+                    'Verify Code',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                  ),
                 ),
               ],
             ),
           ),
         );
       },
+    );
+
+    // Sheet dismissed (submitted or swiped away).
+    _sheetOpen = false;
+    if (!_isProcessing) _manualCodeController.clear();
+  }
+
+  // ---------------------------------------------------------------
+  // BUILD
+  // ---------------------------------------------------------------
+
+  Widget _buildCameraError() {
+    final title = _permissionDenied ? 'Camera access is off' : 'Camera unavailable';
+    final message = _permissionDenied
+        ? 'Allow camera access in Settings > PharmaChain to scan packaging. '
+            'You can still enter the batch code below.'
+        : "We couldn't start the camera on this device. "
+            'You can still enter the batch code below.';
+
+    return Container(
+      color: Colors.black,
+      alignment: Alignment.center,
+      padding: const EdgeInsets.symmetric(horizontal: 36),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.no_photography_outlined, color: Colors.white70, size: 48),
+          const SizedBox(height: 16),
+          Text(
+            title,
+            textAlign: TextAlign.center,
+            style: AppTextStyles.headline.copyWith(color: Colors.white, fontSize: 20),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            message,
+            textAlign: TextAlign.center,
+            style: AppTextStyles.body.copyWith(color: Colors.white70, fontSize: 14),
+          ),
+        ],
+      ),
     );
   }
 
@@ -141,19 +275,36 @@ class _PatientVerificationScreenState extends State<PatientVerificationScreen> {
           MobileScanner(
             controller: _scannerController,
             onDetect: _onDetect,
+                        errorBuilder: (BuildContext context, MobileScannerException error,
+                [Widget? child]) {
+              if (!_cameraFailed) {
+                final denied = error.errorCode.name == 'permissionDenied';
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (mounted) {
+                    setState(() {
+                      _cameraFailed = true;
+                      _permissionDenied = denied;
+                    });
+                  }
+                });
+              }
+              return _buildCameraError();
+            },
+  
           ),
 
-          // Dark overlay with viewfinder cutout
-          Center(
-            child: Container(
-              width: 260,
-              height: 260,
-              decoration: BoxDecoration(
-                border: Border.all(color: AppColors.primary, width: 3),
-                borderRadius: BorderRadius.circular(24),
+          // Viewfinder frame (only when the camera is working)
+          if (!_cameraFailed)
+            Center(
+              child: Container(
+                width: 260,
+                height: 260,
+                decoration: BoxDecoration(
+                  border: Border.all(color: AppColors.primary, width: 3),
+                  borderRadius: BorderRadius.circular(24),
+                ),
               ),
             ),
-          ),
 
           // Top bar
           SafeArea(
@@ -163,17 +314,22 @@ class _PatientVerificationScreenState extends State<PatientVerificationScreen> {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   IconButton(
-                    onPressed: () => context.pop(),
+                    tooltip: 'Close',
+                    onPressed: _close,
                     icon: const Icon(Icons.close, color: Colors.white),
                   ),
                   Text(
                     'Scan Medicine Packaging',
                     style: AppTextStyles.label.copyWith(color: Colors.white),
                   ),
-                  IconButton(
-                    onPressed: () => _scannerController.toggleTorch(),
-                    icon: const Icon(Icons.flash_on, color: Colors.white),
-                  ),
+                  // Keeps the title centred when the flash button is hidden.
+                  _cameraFailed
+                      ? const SizedBox(width: 48, height: 48)
+                      : IconButton(
+                          tooltip: 'Toggle flash',
+                          onPressed: () => _scannerController.toggleTorch(),
+                          icon: const Icon(Icons.flash_on, color: Colors.white),
+                        ),
                 ],
               ),
             ),
@@ -186,21 +342,38 @@ class _PatientVerificationScreenState extends State<PatientVerificationScreen> {
             bottom: 0,
             child: SafeArea(
               child: Padding(
-                padding: const EdgeInsets.all(24.0),
+                padding: const EdgeInsets.fromLTRB(24, 24, 24, 16),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Text(
-                      'Align the QR or barcode within the frame',
-                      style: AppTextStyles.body.copyWith(color: Colors.white70),
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 16),
-                    TextButton(
-                      onPressed: _showManualEntrySheet,
-                      child: Text(
-                        'Enter Code Manually',
-                        style: AppTextStyles.label.copyWith(color: AppColors.tertiary),
+                    if (!_cameraFailed) ...[
+                      Text(
+                        'Point your camera at the QR code on the pack',
+                        style: AppTextStyles.body.copyWith(
+                          color: Colors.white,
+                          fontSize: 15,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 16),
+                    ],
+                    SizedBox(
+                      width: double.infinity,
+                      height: 50,
+                      child: OutlinedButton.icon(
+                        onPressed: _showManualEntrySheet,
+                        icon: const Icon(Icons.keyboard_outlined, size: 20),
+                        label: const Text(
+                          'Enter Code Manually',
+                          style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+                        ),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: Colors.white,
+                          side: const BorderSide(color: Colors.white70, width: 1.5),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                        ),
                       ),
                     ),
                   ],
