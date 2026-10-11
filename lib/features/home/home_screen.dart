@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_text_styles.dart';
 import '../../services/auth_service.dart';
+import '../../shared/verification_status.dart';
 
 String _timeAgo(DateTime time) {
   final diff = DateTime.now().difference(time);
@@ -302,7 +303,7 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  /// Recent verifications plus the journey of the latest one, both live.
+  /// Recent verifications plus the journey of the latest real batch, both live.
   Widget _buildLiveSections(BuildContext context) {
     final stream = _verificationsStream;
     if (stream == null) {
@@ -330,9 +331,17 @@ class _HomeScreenState extends State<HomeScreen> {
           return _emptyMessage('No verifications yet. Scan a medicine to get started.');
         }
 
-        final latest = docs.first.data();
-        final latestCode = latest['batchCode'] as String? ?? '';
-        final latestName = latest['productName'] as String? ?? latestCode;
+        // Only batches that exist can have a journey, so skip unrecognised codes.
+        String latestCode = '';
+        String latestName = '';
+        for (final d in docs) {
+          final data = d.data();
+          if ((data['status'] as String?) != 'Under Review') {
+            latestCode = data['batchCode'] as String? ?? '';
+            latestName = data['productName'] as String? ?? latestCode;
+            break;
+          }
+        }
 
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -458,7 +467,7 @@ class _VerificationCard extends StatelessWidget {
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Text(
-                status,
+                verificationStatusLabel(status),
                 style: TextStyle(
                   fontSize: 11,
                   fontWeight: FontWeight.bold,
