@@ -41,13 +41,20 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  @override
+    @override
   Widget build(BuildContext context) {
-    final User? user = AuthService().currentUser;
+    return StreamBuilder<User?>(
+      stream: FirebaseAuth.instance.userChanges(),
+      initialData: AuthService().currentUser,
+      builder: (context, snapshot) => _buildContent(context, snapshot.data),
+    );
+  }
 
-    final String name = user?.displayName?.trim().isNotEmpty == true
+  Widget _buildContent(BuildContext context, User? user) {
+     final String name = user?.displayName?.trim().isNotEmpty == true
         ? user!.displayName!.trim()
         : 'there';
+
 
     return Scaffold(
       backgroundColor: AppColors.background,
