@@ -5,6 +5,7 @@ import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_text_styles.dart';
+import '../../services/gateway_service.dart';
 
 class PatientVerificationScreen extends StatefulWidget {
   const PatientVerificationScreen({super.key});
@@ -53,39 +54,39 @@ class _PatientVerificationScreenState extends State<PatientVerificationScreen> {
     _verifyCode(code);
   }
 
-  Future<void> _verifyCode(String rawCode) async {
+    Future<void> _verifyCode(String rawCode) async {
     final code = rawCode.trim();
     String resolvedCode = code;
-    DocumentSnapshot<Map<String, dynamic>>? doc;
+    Map<String, dynamic> result = {'exists': false};
 
     try {
-      // Firestore document IDs can't contain "/", so a code like a URL
-      // can never match a batch. Treat it as not found instead of crashing.
-      if (code.isNotEmpty && !code.contains('/')) {
-        final batches = FirebaseFirestore.instance.collection('batches');
-        doc = await batches.doc(code).get();
+      // The ledger only holds codes up to 64 characters; anything longer
+      // (for example a URL in a QR code) cannot be a batch.
+      if (code.isNotEmpty && code.length <= 64) {
+        result = await GatewayService.instance.verifyBatch(code);
 
-        // Batch codes are stored upper-case; be forgiving about typing.
-        if (!doc.exists && code != code.toUpperCase()) {
-          final alt = await batches.doc(code.toUpperCase()).get();
-          if (alt.exists) {
-            doc = alt;
+        // Be forgiving about typing in lower case.
+        if (result['exists'] != true && code != code.toUpperCase()) {
+          final alt = await GatewayService.instance.verifyBatch(code.toUpperCase());
+          if (alt['exists'] == true) {
+            result = alt;
             resolvedCode = code.toUpperCase();
           }
         }
       }
     } catch (e) {
+      // The ledger could not be reached or asked: say so, never guess "counterfeit".
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text("Couldn't check that code. Check your connection and try again."),
-        ),
-      );
+      final message = e is GatewayException ? e.message : "Couldn't check that code. Please try again.";
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
       await _resetAfterAttempt();
       return;
     }
 
-    final exists = doc?.exists ?? false;
+    final exists = result['exists'] == true;
+    final ledgerStatus = result['status'] as String? ?? 'Not recognised';
+    final productName = result['productName'] as String? ?? resolvedCode;
+    final status = !exists ? 'Under Review' : (ledgerStatus == 'Expired' ? 'Expired' : 'Authentic');
 
     // Record the attempt. A failure here shouldn't hide the result.
     final uid = FirebaseAuth.instance.currentUser?.uid;
@@ -94,8 +95,8 @@ class _PatientVerificationScreenState extends State<PatientVerificationScreen> {
         await FirebaseFirestore.instance.collection('verifications').add({
           'userId': uid,
           'batchCode': resolvedCode,
-          'productName': doc?.data()?['productName'] as String? ?? resolvedCode,
-          'status': exists ? 'Authentic' : 'Under Review',
+          'productName': productName,
+          'status': status,
           'verifiedAt': FieldValue.serverTimestamp(),
         });
       } catch (e) {
@@ -106,8 +107,14 @@ class _PatientVerificationScreenState extends State<PatientVerificationScreen> {
     if (!mounted) return;
 
     if (exists) {
-      await context.push('/validation-success',
-          extra: {'code': resolvedCode, 'data': doc!.data()});
+      await context.push('/validation-success', extra: {
+        'code': resolvedCode,
+        'data': {
+          'productName': result['productName'],
+          'expiryDate': result['expiryDate'],
+          'organizationId': result['manufacturerOrgId'],
+        },
+      });
     } else {
       await context.push('/counterfeit-catch', extra: {'code': resolvedCode});
     }
