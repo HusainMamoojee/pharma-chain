@@ -70,5 +70,12 @@
 	<string>This app needs access to the camera for scanning QR codes.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>This app needs access to your photos so you can attach a picture of the medicine packaging to a counterfeit report.</string>
+		<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>The app connects to the PharmaChain blockchain gateway on your local network during development.</string>
 </dict>
 </plist>

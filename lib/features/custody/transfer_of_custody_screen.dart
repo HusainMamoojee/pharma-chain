@@ -4,6 +4,7 @@ import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_text_styles.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import '../../services/gateway_service.dart';
 import '../../shared/widgets/staff_name_text.dart';
 
 class CustodyStage {
@@ -11,7 +12,6 @@ class CustodyStage {
   final String? staffUid;
   final String when;
   final bool completed;
-
 
   const CustodyStage({
     required this.label,
@@ -33,92 +33,186 @@ class TransferOfCustodyScreen extends StatefulWidget {
 class _TransferOfCustodyScreenState extends State<TransferOfCustodyScreen> {
   bool _isProcessing = false;
 
-  // TODO: replace with a real Firestore/blockchain lookup keyed by widget.batchCode
-  // Live custody history for this batch. No orderBy on purpose, so no
-  // composite index is needed; we sort on the device instead.
-  late final Stream<QuerySnapshot<Map<String, dynamic>>> _eventsStream =
-      FirebaseFirestore.instance
-          .collection('custody_events')
-          .where('batchCode', isEqualTo: widget.batchCode)
-          .snapshots();
+  // Everything this screen shows comes from the blockchain ledger.
+  late Future<_CustodyState> _stateFuture = _loadState();
 
-  List<QueryDocumentSnapshot<Map<String, dynamic>>> _sorted(
-      QuerySnapshot<Map<String, dynamic>> snap) {
-    final docs = snap.docs.toList();
-    docs.sort((a, b) {
-      final ta = a.data()['timestamp'] as Timestamp?;
-      final tb = b.data()['timestamp'] as Timestamp?;
-      // A just-written event has a null timestamp until the server fills it in; treat it as newest.
-      if (ta == null && tb == null) return 0;
-      if (ta == null) return 1;
-      if (tb == null) return -1;
-      return ta.compareTo(tb);
+
+
+
+    void _reload() {
+    setState(() {
+      _stateFuture = _loadState();
     });
-    return docs;
   }
 
-   CustodyStage _stageFrom(Map<String, dynamic> data) {
-    final action = data['action'] as String? ?? 'Event';
-    final uid = data['staffUid'] as String?;
-    final ts = data['timestamp'] as Timestamp?;
 
-    String when = 'Just now';
-    if (ts != null) {
-      final d = ts.toDate();
+
+  Future<_CustodyState> _loadState() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) throw GatewayException('You are not signed in.');
+
+    final batch = await GatewayService.instance.verifyBatch(widget.batchCode);
+    final events = await GatewayService.instance.batchHistory(widget.batchCode);
+    final userDoc = await FirebaseFirestore.instance.collection('users').doc(uid).get();
+    final myOrgId = userDoc.data()?['organizationId'] as String?;
+
+    // Organisation names, for display.
+    final orgIds = <String>{
+      ...events.map((e) => e['orgId']).whereType<String>(),
+      ...events.map((e) => e['toOrgId']).whereType<String>(),
+      if (batch['holderOrgId'] is String) batch['holderOrgId'] as String,
+    }..removeWhere((id) => id.isEmpty);
+
+    final names = <String, String>{};
+    await Future.wait(orgIds.map((id) async {
+      final snap = await FirebaseFirestore.instance.collection('stakeholders').doc(id).get();
+      names[id] = snap.data()?['organizationName'] as String? ?? id;
+    }));
+
+    return _CustodyState(batch: batch, events: events, myOrgId: myOrgId, orgNames: names);
+  }
+
+  CustodyStage _stageFrom(Map<String, dynamic> e, Map<String, String> names) {
+    final action = e['action'] as String? ?? 'Event';
+    final toId = e['toOrgId'] as String? ?? '';
+    final staffUid = e['staffUid'] as String? ?? '';
+    final orgName = names[e['orgId']] ?? '—';
+
+    String when = '';
+    final d = DateTime.tryParse(e['timestamp'] as String? ?? '')?.toLocal();
+    if (d != null) {
       String two(int n) => n.toString().padLeft(2, '0');
       when = '${two(d.day)}/${two(d.month)}/${d.year} ${two(d.hour)}:${two(d.minute)}';
     }
 
-    return CustodyStage(label: action, staffUid: uid, when: when, completed: true);
+    return CustodyStage(
+      label: toId.isEmpty ? action : '$action → ${names[toId] ?? toId}',
+      staffUid: staffUid.isEmpty ? null : staffUid,
+      when: '$orgName • $when',
+      completed: true,
+    );
   }
 
+    /// Lets staff choose which verified organisation receives the batch.
+  /// Returns that organisation's ID, or null if they cancel.
+  Future<String?> _pickDestination() async {
+    List<QueryDocumentSnapshot<Map<String, dynamic>>> options;
+    try {
+      final state = await _stateFuture;
+      final snap = await FirebaseFirestore.instance
+          .collection('stakeholders')
+          .where('verificationStatus', isEqualTo: 'verified')
+          .get();
+      options = snap.docs.where((d) => d.id != state.myOrgId).toList();
+    } catch (e) {
+      if (!mounted) return null;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not load the list of organisations. Please try again.')),
+      );
+      return null;
+    }
 
-  
-  
+    if (!mounted) return null;
+
+        return showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (sheetContext) => ConstrainedBox(
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.of(sheetContext).size.height * 0.7,
+        ),
+        child: Container(
+          padding: const EdgeInsets.fromLTRB(24, 24, 24, 12),
+          decoration: const BoxDecoration(
+            color: AppColors.surface,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+          ),
+          child: SafeArea(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Send batch to', style: AppTextStyles.headline.copyWith(fontSize: 20)),
+                const SizedBox(height: 8),
+                if (options.isEmpty)
+                  Text(
+                    'No other verified organisations are available.',
+                    style: AppTextStyles.body.copyWith(color: AppColors.textSecondary),
+                  )
+                else
+                  Flexible(
+                    child: ListView(
+                      shrinkWrap: true,
+                      children: options
+                          .map((d) => ListTile(
+                                contentPadding: EdgeInsets.zero,
+                                title: Text(d.data()['organizationName'] as String? ?? d.id),
+                                subtitle: Text(d.data()['organizationType'] as String? ?? ''),
+                                onTap: () => Navigator.of(sheetContext).pop(d.id),
+                              ))
+                          .toList(),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 
   Future<void> _handleAction(String action) async {
+    String? toOrgId;
+    if (action == 'Transfer initiated') {
+      toOrgId = await _pickDestination();
+      if (toOrgId == null) return; // cancelled
+    }
+
+    if (!mounted) return;
     setState(() => _isProcessing = true);
 
     try {
-      final uid = FirebaseAuth.instance.currentUser?.uid;
+      // The ledger decides whether this is allowed; it refuses anything the
+      // signed-in staff member's organisation isn't entitled to do.
+      if (action == 'Transfer initiated') {
+        await GatewayService.instance.initiateTransfer(widget.batchCode, toOrgId!);
+      } else {
+        await GatewayService.instance.confirmReceipt(widget.batchCode);
+      }
 
-      // Look up the product name so the dashboard's recent-scans list has
-      // something readable to show, instead of just the raw batch code.
-      final batchDoc = await FirebaseFirestore.instance.collection('batches').doc(widget.batchCode).get();
-      final productName = batchDoc.data()?['productName'] as String? ?? widget.batchCode;
-
-      await FirebaseFirestore.instance.collection('custody_events').add({
-        'batchCode': widget.batchCode,
-        'action': action,
-        'staffUid': uid,
-        'timestamp': FieldValue.serverTimestamp(),
-      });
-
-      await FirebaseFirestore.instance.collection('scan_logs').add({
-        'productName': productName,
-        'lotNumber': widget.batchCode,
-        'status': action,
-        'location': 'Bay 4 (Gauteng Central Depot)',
-        'scannedAt': FieldValue.serverTimestamp(),
-        'scannedBy': uid,
-      });
+      // Keep the staff dashboard's recent-scans list working.
+      try {
+        final uid = FirebaseAuth.instance.currentUser?.uid;
+        final batchDoc = await FirebaseFirestore.instance.collection('batches').doc(widget.batchCode).get();
+        final productName = batchDoc.data()?['productName'] as String? ?? widget.batchCode;
+        await FirebaseFirestore.instance.collection('scan_logs').add({
+          'productName': productName,
+          'lotNumber': widget.batchCode,
+          'status': action,
+          'location': 'Bay 4 (Gauteng Central Depot)',
+          'scannedAt': FieldValue.serverTimestamp(),
+          'scannedBy': uid,
+        });
+      } catch (e) {
+        debugPrint('Could not save scan log: $e');
+      }
 
       if (!mounted) return;
       setState(() => _isProcessing = false);
-
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('$action recorded for ${widget.batchCode}')),
+        SnackBar(content: Text('$action recorded on the blockchain for ${widget.batchCode}')),
       );
-      context.pop();
+      _reload(); // show the new entry in the timeline
     } catch (e) {
       if (!mounted) return;
       setState(() => _isProcessing = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Could not record this action. Please try again.')),
-      );
+      final message = e is GatewayException ? e.message : 'Could not record this action. Please try again.';
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
     }
   }
-  
+
+ 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -128,33 +222,45 @@ class _TransferOfCustodyScreenState extends State<TransferOfCustodyScreen> {
         elevation: 0,
         title: Text('Transfer of Custody', style: AppTextStyles.headline.copyWith(fontSize: 18)),
       ),
-      body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-        stream: _eventsStream,
+      body: FutureBuilder<_CustodyState>(
+        future: _stateFuture,
         builder: (context, snapshot) {
           if (snapshot.hasError) {
             return Center(
               child: Padding(
                 padding: const EdgeInsets.all(24),
-                child: SelectableText(
-                  'Could not load custody history:\n${snapshot.error}',
-                  textAlign: TextAlign.center,
-                  style: AppTextStyles.body.copyWith(color: AppColors.textSecondary),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      '${snapshot.error}',
+                      textAlign: TextAlign.center,
+                      style: AppTextStyles.body.copyWith(color: AppColors.textSecondary),
+                    ),
+                    const SizedBox(height: 16),
+                    OutlinedButton(onPressed: _reload, child: const Text('Try again')),
+                  ],
                 ),
               ),
             );
           }
-          if (!snapshot.hasData) {
+          if (snapshot.connectionState != ConnectionState.done || !snapshot.hasData) {
             return const Center(child: CircularProgressIndicator());
           }
 
-          final docs = _sorted(snapshot.data!);
-          final stages = docs.map((d) => _stageFrom(d.data())).toList();
-          final lastAction = docs.isEmpty ? null : docs.last.data()['action'] as String?;
+          final state = snapshot.data!;
+          final stages = state.events.map((e) => _stageFrom(e, state.orgNames)).toList();
+          final canConfirmReceipt = state.canConfirmReceipt;
+          final canInitiateTransfer = state.canInitiateTransfer;
 
-          // A batch can only be received once someone has sent it, and can only be
-          // sent when it is new or has just been received.
-          final canConfirmReceipt = lastAction == 'Transfer initiated';
-          final canInitiateTransfer = lastAction == null || lastAction == 'Receipt confirmed';
+          String? notice;
+          if (!state.onLedger) {
+            notice = 'This batch is not on the blockchain ledger, so its custody cannot be recorded.';
+          } else if (!canConfirmReceipt && !canInitiateTransfer) {
+            notice = state.custodyStatus == 'In transit'
+                ? 'Sent to ${state.orgName(state.pendingToOrgId) ?? 'another organisation'}; waiting for them to confirm receipt.'
+                : 'Held by ${state.orgName(state.holderOrgId) ?? 'another organisation'}. Only they can send it on.';
+          }
 
           return Stack(
             children: [
@@ -191,6 +297,13 @@ class _TransferOfCustodyScreenState extends State<TransferOfCustodyScreen> {
                     const SizedBox(height: 24),
 
                     Text('Chain of Custody', style: AppTextStyles.label.copyWith(fontSize: 15)),
+                    if (state.onLedger) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        'Recorded on the blockchain ledger',
+                        style: AppTextStyles.body.copyWith(fontSize: 12, color: AppColors.textSecondary),
+                      ),
+                    ],
                     const SizedBox(height: 16),
 
                     if (stages.isEmpty)
@@ -211,6 +324,12 @@ class _TransferOfCustodyScreenState extends State<TransferOfCustodyScreen> {
                     const SizedBox(height: 32),
                     Text('Take Action', style: AppTextStyles.label.copyWith(fontSize: 15)),
                     const SizedBox(height: 12),
+
+                    if (notice != null)
+                      Text(
+                        notice,
+                        style: AppTextStyles.body.copyWith(color: AppColors.textSecondary),
+                      ),
 
                     if (canConfirmReceipt)
                       SizedBox(
@@ -301,7 +420,7 @@ class _CustodyTimelineTile extends StatelessWidget {
                 children: [
                   Text(stage.label, style: AppTextStyles.label.copyWith(fontSize: 14)),
                   const SizedBox(height: 2),
-                 StaffNameText(
+                  StaffNameText(
                     uid: stage.staffUid,
                     suffix: ' • ${stage.when}',
                     style: AppTextStyles.body.copyWith(fontSize: 12, color: AppColors.textSecondary),
@@ -314,4 +433,38 @@ class _CustodyTimelineTile extends StatelessWidget {
       ),
     );
   }
+}
+
+class _CustodyState {
+  final Map<String, dynamic> batch;
+  final List<Map<String, dynamic>> events;
+  final String? myOrgId;
+  final Map<String, String> orgNames;
+
+  _CustodyState({
+    required this.batch,
+    required this.events,
+    required this.myOrgId,
+    required this.orgNames,
+  });
+
+  bool get onLedger => batch['exists'] == true;
+  String get custodyStatus => batch['custodyStatus'] as String? ?? '';
+  String? get holderOrgId => batch['holderOrgId'] as String?;
+
+  /// Who the batch has been sent to, while it is in transit.
+  String? get pendingToOrgId {
+    if (custodyStatus != 'In transit') return null;
+    for (final e in events.reversed) {
+      if (e['action'] == 'Transfer initiated') return e['toOrgId'] as String?;
+    }
+    return null;
+  }
+
+  bool get canInitiateTransfer =>
+      onLedger && myOrgId != null && holderOrgId == myOrgId && custodyStatus != 'In transit';
+
+  bool get canConfirmReceipt => onLedger && myOrgId != null && pendingToOrgId == myOrgId;
+
+  String? orgName(String? id) => id == null ? null : (orgNames[id] ?? id);
 }
