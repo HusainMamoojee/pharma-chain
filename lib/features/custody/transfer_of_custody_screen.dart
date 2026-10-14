@@ -36,9 +36,16 @@ class _TransferOfCustodyScreenState extends State<TransferOfCustodyScreen> {
   // Everything this screen shows comes from the blockchain ledger.
   late Future<_CustodyState> _stateFuture = _loadState();
 
-  void _reload() {
-    setState(() => _stateFuture = _loadState());
+
+
+
+    void _reload() {
+    setState(() {
+      _stateFuture = _loadState();
+    });
   }
+
+
 
   Future<_CustodyState> _loadState() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
@@ -86,50 +93,126 @@ class _TransferOfCustodyScreenState extends State<TransferOfCustodyScreen> {
     );
   }
 
-  // NOTE: still the old Firestore version. Step 4 replaces this with ledger calls.
+    /// Lets staff choose which verified organisation receives the batch.
+  /// Returns that organisation's ID, or null if they cancel.
+  Future<String?> _pickDestination() async {
+    List<QueryDocumentSnapshot<Map<String, dynamic>>> options;
+    try {
+      final state = await _stateFuture;
+      final snap = await FirebaseFirestore.instance
+          .collection('stakeholders')
+          .where('verificationStatus', isEqualTo: 'verified')
+          .get();
+      options = snap.docs.where((d) => d.id != state.myOrgId).toList();
+    } catch (e) {
+      if (!mounted) return null;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not load the list of organisations. Please try again.')),
+      );
+      return null;
+    }
+
+    if (!mounted) return null;
+
+        return showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (sheetContext) => ConstrainedBox(
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.of(sheetContext).size.height * 0.7,
+        ),
+        child: Container(
+          padding: const EdgeInsets.fromLTRB(24, 24, 24, 12),
+          decoration: const BoxDecoration(
+            color: AppColors.surface,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+          ),
+          child: SafeArea(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Send batch to', style: AppTextStyles.headline.copyWith(fontSize: 20)),
+                const SizedBox(height: 8),
+                if (options.isEmpty)
+                  Text(
+                    'No other verified organisations are available.',
+                    style: AppTextStyles.body.copyWith(color: AppColors.textSecondary),
+                  )
+                else
+                  Flexible(
+                    child: ListView(
+                      shrinkWrap: true,
+                      children: options
+                          .map((d) => ListTile(
+                                contentPadding: EdgeInsets.zero,
+                                title: Text(d.data()['organizationName'] as String? ?? d.id),
+                                subtitle: Text(d.data()['organizationType'] as String? ?? ''),
+                                onTap: () => Navigator.of(sheetContext).pop(d.id),
+                              ))
+                          .toList(),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   Future<void> _handleAction(String action) async {
+    String? toOrgId;
+    if (action == 'Transfer initiated') {
+      toOrgId = await _pickDestination();
+      if (toOrgId == null) return; // cancelled
+    }
+
+    if (!mounted) return;
     setState(() => _isProcessing = true);
 
     try {
-      final uid = FirebaseAuth.instance.currentUser?.uid;
+      // The ledger decides whether this is allowed; it refuses anything the
+      // signed-in staff member's organisation isn't entitled to do.
+      if (action == 'Transfer initiated') {
+        await GatewayService.instance.initiateTransfer(widget.batchCode, toOrgId!);
+      } else {
+        await GatewayService.instance.confirmReceipt(widget.batchCode);
+      }
 
-      // Look up the product name so the dashboard's recent-scans list has
-      // something readable to show, instead of just the raw batch code.
-      final batchDoc = await FirebaseFirestore.instance.collection('batches').doc(widget.batchCode).get();
-      final productName = batchDoc.data()?['productName'] as String? ?? widget.batchCode;
-
-      await FirebaseFirestore.instance.collection('custody_events').add({
-        'batchCode': widget.batchCode,
-        'action': action,
-        'staffUid': uid,
-        'timestamp': FieldValue.serverTimestamp(),
-      });
-
-      await FirebaseFirestore.instance.collection('scan_logs').add({
-        'productName': productName,
-        'lotNumber': widget.batchCode,
-        'status': action,
-        'location': 'Bay 4 (Gauteng Central Depot)',
-        'scannedAt': FieldValue.serverTimestamp(),
-        'scannedBy': uid,
-      });
+      // Keep the staff dashboard's recent-scans list working.
+      try {
+        final uid = FirebaseAuth.instance.currentUser?.uid;
+        final batchDoc = await FirebaseFirestore.instance.collection('batches').doc(widget.batchCode).get();
+        final productName = batchDoc.data()?['productName'] as String? ?? widget.batchCode;
+        await FirebaseFirestore.instance.collection('scan_logs').add({
+          'productName': productName,
+          'lotNumber': widget.batchCode,
+          'status': action,
+          'location': 'Bay 4 (Gauteng Central Depot)',
+          'scannedAt': FieldValue.serverTimestamp(),
+          'scannedBy': uid,
+        });
+      } catch (e) {
+        debugPrint('Could not save scan log: $e');
+      }
 
       if (!mounted) return;
       setState(() => _isProcessing = false);
-
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('$action recorded for ${widget.batchCode}')),
+        SnackBar(content: Text('$action recorded on the blockchain for ${widget.batchCode}')),
       );
-      context.pop();
+      _reload(); // show the new entry in the timeline
     } catch (e) {
       if (!mounted) return;
       setState(() => _isProcessing = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Could not record this action. Please try again.')),
-      );
+      final message = e is GatewayException ? e.message : 'Could not record this action. Please try again.';
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
     }
   }
 
+ 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
