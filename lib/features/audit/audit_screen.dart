@@ -1,16 +1,22 @@
+import 'dart:io';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
 import '../../core/theme/app_colors.dart';
 import '../../services/auth_service.dart';
 import '../../shared/widgets/staff_bottom_nav.dart';
 import '../../shared/widgets/staff_name_text.dart';
 
-enum AuditType { scan, transfer }
+enum AuditType { transfer, receipt }
 
 class AuditEntry {
   final AuditType type;
   final String title;
+  final String productName;
   final String batchCode;
   final String? staffUid;
   final DateTime? timestamp;
@@ -18,6 +24,7 @@ class AuditEntry {
   const AuditEntry({
     required this.type,
     required this.title,
+    required this.productName,
     required this.batchCode,
     required this.staffUid,
     required this.timestamp,
@@ -25,23 +32,15 @@ class AuditEntry {
 
   factory AuditEntry.fromScanLog(QueryDocumentSnapshot<Map<String, dynamic>> doc) {
     final data = doc.data();
+    final status = (data['status'] as String? ?? '').toLowerCase();
+    final isReceipt = status.contains('receipt');
     return AuditEntry(
-      type: AuditType.scan,
-      title: 'Package scanned — ${data['status'] ?? 'Logged'}',
+      type: isReceipt ? AuditType.receipt : AuditType.transfer,
+      title: isReceipt ? 'Receipt confirmed' : 'Transfer initiated',
+      productName: data['productName'] as String? ?? '',
       batchCode: data['lotNumber'] as String? ?? 'Unknown',
       staffUid: data['scannedBy'] as String?,
       timestamp: (data['scannedAt'] as Timestamp?)?.toDate(),
-    );
-  }
-
-  factory AuditEntry.fromCustodyEvent(QueryDocumentSnapshot<Map<String, dynamic>> doc) {
-    final data = doc.data();
-    return AuditEntry(
-      type: AuditType.transfer,
-      title: data['action'] as String? ?? 'Custody event',
-      batchCode: data['batchCode'] as String? ?? 'Unknown',
-      staffUid: data['staffUid'] as String?,
-      timestamp: (data['timestamp'] as Timestamp?)?.toDate(),
     );
   }
 
@@ -75,161 +74,229 @@ class AuditScreen extends StatefulWidget {
 
 class _AuditScreenState extends State<AuditScreen> {
   String _activeFilter = 'All';
+  bool _orgLoaded = false;
+  String? _orgId;
+  Stream<QuerySnapshot<Map<String, dynamic>>>? _logsStream;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadOrg();
+  }
+
+  Future<void> _loadOrg() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    String? orgId;
+    if (uid != null) {
+      final snap = await FirebaseFirestore.instance.collection('users').doc(uid).get();
+      orgId = snap.data()?['organizationId'] as String?;
+    }
+    if (!mounted) return;
+    setState(() {
+      _orgId = orgId;
+      _orgLoaded = true;
+      if (orgId != null) {
+        // Equality filter only, so no composite index is needed.
+        _logsStream = FirebaseFirestore.instance
+            .collection('scan_logs')
+            .where('organizationId', isEqualTo: orgId)
+            .snapshots();
+      }
+    });
+  }
 
   bool _matchesFilter(AuditEntry entry) {
     if (_activeFilter == 'All') return true;
-    if (_activeFilter == 'Scans') return entry.type == AuditType.scan;
     if (_activeFilter == 'Transfers') return entry.type == AuditType.transfer;
+    if (_activeFilter == 'Receipts') return entry.type == AuditType.receipt;
     return true;
   }
 
-  IconData _iconFor(AuditType type) => type == AuditType.scan ? Icons.qr_code_scanner : Icons.swap_horiz;
+  IconData _iconFor(AuditType type) =>
+      type == AuditType.transfer ? Icons.swap_horiz : Icons.inventory_2_outlined;
+
+  String _csv(String v) => '"${v.replaceAll('"', '""')}"';
+
+  Future<void> _export(List<AuditEntry> entries) async {
+    if (entries.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Nothing to export yet.')),
+      );
+      return;
+    }
+
+    final buffer = StringBuffer('Date,Time,Type,Event,Product,Batch,Staff UID\n');
+    for (final e in entries) {
+      final t = e.timestamp;
+      final date = t == null ? '' : t.toIso8601String().substring(0, 10);
+      final time = t == null ? '' : t.toIso8601String().substring(11, 19);
+      buffer.writeln([
+        date,
+        time,
+        e.type == AuditType.transfer ? 'Transfer' : 'Receipt',
+        e.title,
+        e.productName,
+        e.batchCode,
+        e.staffUid ?? '',
+      ].map(_csv).join(','));
+    }
+
+    final dir = await getTemporaryDirectory();
+    final stamp = DateTime.now().toIso8601String().substring(0, 10);
+    final file = File('${dir.path}/pharmachain-audit-$stamp.csv');
+    await file.writeAsString(buffer.toString());
+
+    await SharePlus.instance.share(
+      ShareParams(files: [XFile(file.path)], subject: 'PharmaChain audit log'),
+    );
+  }
+
+  Widget _centered(String message) => Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24.0),
+          child: Text(message, textAlign: TextAlign.center, style: TextStyle(color: AppColors.textSecondary)),
+        ),
+      );
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.background,
       body: SafeArea(
-        child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-          stream: FirebaseFirestore.instance.collection('scan_logs').snapshots(),
-          builder: (context, scanSnap) {
-            return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-              stream: FirebaseFirestore.instance.collection('custody_events').snapshots(),
-              builder: (context, custodySnap) {
-                if (scanSnap.connectionState == ConnectionState.waiting ||
-                    custodySnap.connectionState == ConnectionState.waiting) {
-                  return const Center(child: CircularProgressIndicator());
-                }
-                if (scanSnap.hasError || custodySnap.hasError) {
-                  return Center(
-                    child: Padding(
-                      padding: const EdgeInsets.all(24.0),
-                      child: SelectableText('Error loading audit log:\n${scanSnap.error ?? custodySnap.error}'),
-                    ),
-                  );
-                }
+        child: !_orgLoaded
+            ? const Center(child: CircularProgressIndicator())
+            : _logsStream == null
+                ? _centered('Your account is not linked to an organisation yet.')
+                : StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                    stream: _logsStream,
+                    builder: (context, snap) {
+                      if (snap.connectionState == ConnectionState.waiting) {
+                        return const Center(child: CircularProgressIndicator());
+                      }
+                      if (snap.hasError) {
+                        return Center(
+                          child: Padding(
+                            padding: const EdgeInsets.all(24.0),
+                            child: SelectableText('Error loading audit log:\n${snap.error}'),
+                          ),
+                        );
+                      }
 
-                final entries = <AuditEntry>[
-                  ...(scanSnap.data?.docs ?? []).map(AuditEntry.fromScanLog),
-                  ...(custodySnap.data?.docs ?? []).map(AuditEntry.fromCustodyEvent),
-                ]..sort((a, b) => (b.timestamp ?? DateTime(0)).compareTo(a.timestamp ?? DateTime(0)));
+                      final entries = (snap.data?.docs ?? []).map(AuditEntry.fromScanLog).toList()
+                        ..sort((a, b) => (b.timestamp ?? DateTime(0)).compareTo(a.timestamp ?? DateTime(0)));
 
-                final todayCount = entries.where((e) => e.dayLabel == 'Today').length;
-                final scanCount = entries.where((e) => e.type == AuditType.scan).length;
-                final transferCount = entries.where((e) => e.type == AuditType.transfer).length;
-                final filtered = entries.where(_matchesFilter).toList();
-                final days = filtered.map((e) => e.dayLabel).toSet().toList();
+                      final todayCount = entries.where((e) => e.dayLabel == 'Today').length;
+                      final transferCount = entries.where((e) => e.type == AuditType.transfer).length;
+                      final receiptCount = entries.where((e) => e.type == AuditType.receipt).length;
+                      final filtered = entries.where(_matchesFilter).toList();
+                      final days = filtered.map((e) => e.dayLabel).toSet().toList();
 
-                return Column(
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                      return Column(
                         children: [
-                          Row(
-                            children: [
-                              Container(
-                                width: 40,
-                                height: 40,
-                                decoration: BoxDecoration(
-                                  color: AppColors.primary.withOpacity(0.10),
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                                child: const Icon(Icons.receipt_long_outlined, color: AppColors.primary, size: 22),
-                              ),
-                              const SizedBox(width: 10),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
                                   children: [
-                                    Text('WAREHOUSE FLOOR',
-                                        style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 1.2, color: AppColors.textSecondary)),
-                                    Text('Audit Log', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: AppColors.textPrimary)),
+                                    Container(
+                                      width: 40,
+                                      height: 40,
+                                      decoration: BoxDecoration(
+                                        color: AppColors.primary.withOpacity(0.10),
+                                        borderRadius: BorderRadius.circular(12),
+                                      ),
+                                      child: const Icon(Icons.receipt_long_outlined, color: AppColors.primary, size: 22),
+                                    ),
+                                    const SizedBox(width: 10),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text('WAREHOUSE FLOOR',
+                                              style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 1.2, color: AppColors.textSecondary)),
+                                          Text('Audit Log', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: AppColors.textPrimary)),
+                                        ],
+                                      ),
+                                    ),
+                                    TextButton.icon(
+                                      onPressed: () => _export(filtered),
+                                      icon: Icon(Icons.ios_share, size: 16, color: AppColors.primary),
+                                      label: Text('Export', style: TextStyle(fontSize: 12, color: AppColors.primary, fontWeight: FontWeight.bold)),
+                                    ),
+                                    IconButton(
+                                      onPressed: () async {
+                                        await AuthService().signOut();
+                                        if (context.mounted) context.go('/staff-login');
+                                      },
+                                      icon: Icon(Icons.logout_rounded, color: AppColors.textPrimary),
+                                    ),
                                   ],
                                 ),
-                              ),
-                              TextButton(
-                                onPressed: () {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(content: Text('Export — coming soon')),
-                                  );
-                                },
-                                child: Text('Export', style: TextStyle(fontSize: 12, color: AppColors.primary, fontWeight: FontWeight.bold)),
-                              ),
-                              IconButton(
-                                onPressed: () async {
-                                  await AuthService().signOut();
-                                  if (context.mounted) context.go('/staff-login');
-                                },
-                                icon: Icon(Icons.logout_rounded, color: AppColors.textPrimary),
-                              ),
-                            ],
-                          ),
-                          Text('Every scan and transfer recorded', style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
-                          const SizedBox(height: 14),
-                          SizedBox(
-                            height: 36,
-                            child: ListView(
-                              scrollDirection: Axis.horizontal,
-                              children: ['All', 'Scans', 'Transfers'].map((label) {
-                                final isSelected = _activeFilter == label;
-                                return Padding(
-                                  padding: const EdgeInsets.only(right: 8),
-                                  child: ChoiceChip(
-                                    label: Text(label, style: TextStyle(fontSize: 12, color: isSelected ? Colors.white : AppColors.textPrimary)),
-                                    selected: isSelected,
-                                    selectedColor: AppColors.primary,
-                                    backgroundColor: AppColors.surface,
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(20),
-                                      side: BorderSide(color: AppColors.textSecondary.withOpacity(0.15)),
-                                    ),
-                                    onSelected: (_) => setState(() => _activeFilter = label),
+                                Text('Every custody transfer and receipt for your organisation',
+                                    style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+                                const SizedBox(height: 14),
+                                SizedBox(
+                                  height: 36,
+                                  child: ListView(
+                                    scrollDirection: Axis.horizontal,
+                                    children: ['All', 'Transfers', 'Receipts'].map((label) {
+                                      final isSelected = _activeFilter == label;
+                                      return Padding(
+                                        padding: const EdgeInsets.only(right: 8),
+                                        child: ChoiceChip(
+                                          label: Text(label, style: TextStyle(fontSize: 12, color: isSelected ? Colors.white : AppColors.textPrimary)),
+                                          selected: isSelected,
+                                          selectedColor: AppColors.primary,
+                                          backgroundColor: AppColors.surface,
+                                          shape: RoundedRectangleBorder(
+                                            borderRadius: BorderRadius.circular(20),
+                                            side: BorderSide(color: AppColors.textSecondary.withOpacity(0.15)),
+                                          ),
+                                          onSelected: (_) => setState(() => _activeFilter = label),
+                                        ),
+                                      );
+                                    }).toList(),
                                   ),
-                                );
-                              }).toList(),
-                            ),
-                          ),
-                          const SizedBox(height: 16),
-                          Row(
-                            children: [
-                              Expanded(child: _StatCard(label: 'Entries Today', value: '$todayCount', color: AppColors.textPrimary)),
-                              const SizedBox(width: 10),
-                              Expanded(child: _StatCard(label: 'Scans', value: '$scanCount', color: AppColors.tertiary)),
-                              const SizedBox(width: 10),
-                              Expanded(child: _StatCard(label: 'Transfers', value: '$transferCount', color: AppColors.primary)),
-                            ],
-                          ),
-                          const SizedBox(height: 12),
-                        ],
-                      ),
-                    ),
-                    Expanded(
-                      child: filtered.isEmpty
-                          ? Center(child: Text('No activity yet.', style: TextStyle(color: AppColors.textSecondary)))
-                          : ListView(
-                              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                              children: [
-                                for (final day in days) ...[
-                                  Padding(
-                                    padding: const EdgeInsets.symmetric(vertical: 8),
-                                    child: Text(day, style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: AppColors.textSecondary)),
-                                  ),
-                                  ...filtered.where((e) => e.dayLabel == day).map((entry) => Padding(
-                                        padding: const EdgeInsets.only(bottom: 10),
-                                        child: _AuditCard(entry: entry, icon: _iconFor(entry.type), color: AppColors.primary),
-                                      )),
-                                ],
+                                ),
+                                const SizedBox(height: 16),
+                                Row(
+                                  children: [
+                                    Expanded(child: _StatCard(label: 'Entries Today', value: '$todayCount', color: AppColors.textPrimary)),
+                                    const SizedBox(width: 10),
+                                    Expanded(child: _StatCard(label: 'Transfers', value: '$transferCount', color: AppColors.tertiary)),
+                                    const SizedBox(width: 10),
+                                    Expanded(child: _StatCard(label: 'Receipts', value: '$receiptCount', color: AppColors.primary)),
+                                  ],
+                                ),
+                                const SizedBox(height: 12),
                               ],
                             ),
-                    ),
-                  ],
-                );
-              },
-            );
-          },
-        ),
+                          ),
+                          Expanded(
+                            child: filtered.isEmpty
+                                ? Center(child: Text('No activity yet.', style: TextStyle(color: AppColors.textSecondary)))
+                                : ListView(
+                                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                                    children: [
+                                      for (final day in days) ...[
+                                        Padding(
+                                          padding: const EdgeInsets.symmetric(vertical: 8),
+                                          child: Text(day, style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: AppColors.textSecondary)),
+                                        ),
+                                        ...filtered.where((e) => e.dayLabel == day).map((entry) => Padding(
+                                              padding: const EdgeInsets.only(bottom: 10),
+                                              child: _AuditCard(entry: entry, icon: _iconFor(entry.type), color: AppColors.primary),
+                                            )),
+                                      ],
+                                    ],
+                                  ),
+                          ),
+                        ],
+                      );
+                    },
+                  ),
       ),
       bottomNavigationBar: const StaffBottomNav(currentIndex: 4),
     );
@@ -294,9 +361,12 @@ class _AuditCard extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(entry.title, style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: AppColors.textPrimary)),
+                Text(
+                  entry.productName.isEmpty ? entry.title : '${entry.title} — ${entry.productName}',
+                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
+                ),
                 const SizedBox(height: 2),
-                  StaffNameText(
+                StaffNameText(
                   uid: entry.staffUid,
                   prefix: '${entry.batchCode} • ',
                   suffix: ' • ${entry.timeLabel}',
