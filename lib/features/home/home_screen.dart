@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_text_styles.dart';
 import '../../services/auth_service.dart';
+import '../../services/gateway_service.dart';
 import '../../shared/verification_status.dart';
 
 String _timeAgo(DateTime time) {
@@ -41,7 +42,7 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-    @override
+  @override
   Widget build(BuildContext context) {
     return StreamBuilder<User?>(
       stream: FirebaseAuth.instance.userChanges(),
@@ -51,10 +52,9 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildContent(BuildContext context, User? user) {
-     final String name = user?.displayName?.trim().isNotEmpty == true
+    final String name = user?.displayName?.trim().isNotEmpty == true
         ? user!.displayName!.trim()
         : 'there';
-
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -310,7 +310,7 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  /// Recent verifications plus the journey of the latest real batch, both live.
+  /// The user's most recent verifications, live from Firestore.
   Widget _buildLiveSections(BuildContext context) {
     final stream = _verificationsStream;
     if (stream == null) {
@@ -338,27 +338,9 @@ class _HomeScreenState extends State<HomeScreen> {
           return _emptyMessage('No verifications yet. Scan a medicine to get started.');
         }
 
-        // Only batches that exist can have a journey, so skip unrecognised codes.
-        String latestCode = '';
-        String latestName = '';
-        for (final d in docs) {
-          final data = d.data();
-          if ((data['status'] as String?) != 'Under Review') {
-            latestCode = data['batchCode'] as String? ?? '';
-            latestName = data['productName'] as String? ?? latestCode;
-            break;
-          }
-        }
-
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            ...docs.map((d) => _VerificationCard(data: d.data())),
-            if (latestCode.isNotEmpty) ...[
-              const SizedBox(height: 20),
-              _JourneyCard(batchCode: latestCode, productName: latestName),
-            ],
-          ],
+          children: docs.map((d) => _VerificationCard(data: d.data())).toList(),
         );
       },
     );
@@ -406,6 +388,35 @@ class _VerificationCard extends StatelessWidget {
 
   const _VerificationCard({required this.data});
 
+  /// Re-checks the batch on the ledger and opens its result, including the journey.
+  Future<void> _open(BuildContext context, String code, String status) async {
+    if (status == 'Under Review') {
+      context.push('/history');
+      return;
+    }
+    try {
+      final r = await GatewayService.instance.verifyBatch(code);
+      if (!context.mounted) return;
+      if (r['exists'] == true) {
+        context.push('/validation-success', extra: {
+          'code': code,
+          'data': {
+            'productName': r['productName'],
+            'expiryDate': r['expiryDate'],
+            'organizationId': r['manufacturerOrgId'],
+          },
+        });
+      } else {
+        context.push('/history');
+      }
+    } catch (_) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not load this batch. Check your connection and try again.')),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final batchCode = data['batchCode'] as String? ?? 'Unknown';
@@ -418,7 +429,7 @@ class _VerificationCard extends StatelessWidget {
 
     return InkWell(
       borderRadius: BorderRadius.circular(14),
-      onTap: () => context.push('/history'),
+      onTap: () => _open(context, batchCode, status),
       child: Container(
         margin: const EdgeInsets.only(bottom: 8),
         padding: const EdgeInsets.all(12),
@@ -486,236 +497,6 @@ class _VerificationCard extends StatelessWidget {
             Icon(Icons.chevron_right, size: 20, color: AppColors.textSecondary),
           ],
         ),
-      ),
-    );
-  }
-}
-
-// =================================================================
-// JOURNEY CARD (real custody history of the latest verified batch)
-// =================================================================
-
-class _JourneyCard extends StatefulWidget {
-  final String batchCode;
-  final String productName;
-
-  const _JourneyCard({required this.batchCode, required this.productName});
-
-  @override
-  State<_JourneyCard> createState() => _JourneyCardState();
-}
-
-class _JourneyCardState extends State<_JourneyCard> {
-  late Stream<QuerySnapshot<Map<String, dynamic>>> _stream;
-
-  Stream<QuerySnapshot<Map<String, dynamic>>> _buildStream() {
-    // No orderBy on purpose, so no composite index is needed; sorted on device.
-    return FirebaseFirestore.instance
-        .collection('custody_events')
-        .where('batchCode', isEqualTo: widget.batchCode)
-        .snapshots();
-  }
-
-  @override
-  void initState() {
-    super.initState();
-    _stream = _buildStream();
-  }
-
-  @override
-  void didUpdateWidget(covariant _JourneyCard oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.batchCode != widget.batchCode) {
-      _stream = _buildStream();
-    }
-  }
-
-  String _friendlyAction(String action) {
-    switch (action) {
-      case 'Transfer initiated':
-        return 'Dispatched';
-      case 'Receipt confirmed':
-        return 'Received';
-      default:
-        return action;
-    }
-  }
-
-  String _formatDate(Timestamp? ts) {
-    if (ts == null) return 'Just now';
-    final d = ts.toDate();
-    String two(int n) => n.toString().padLeft(2, '0');
-    return '${two(d.day)}/${two(d.month)}/${d.year} ${two(d.hour)}:${two(d.minute)}';
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.75),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.textSecondary.withOpacity(0.12)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                width: 40,
-                height: 40,
-                decoration: BoxDecoration(
-                  color: AppColors.primary.withOpacity(0.12),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Icon(Icons.local_shipping_outlined, color: AppColors.primary, size: 21),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Medicine Journey',
-                      style: TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.bold,
-                        color: AppColors.textPrimary,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      '${widget.productName} • Batch ${widget.batchCode}',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-            stream: _stream,
-            builder: (context, snapshot) {
-              if (snapshot.hasError) {
-                return SelectableText(
-                  'Could not load the journey:\n${snapshot.error}',
-                  style: AppTextStyles.body.copyWith(color: AppColors.textSecondary),
-                );
-              }
-              if (!snapshot.hasData) {
-                return const Center(
-                  child: SizedBox(
-                    width: 22,
-                    height: 22,
-                    child: CircularProgressIndicator(strokeWidth: 2.5),
-                  ),
-                );
-              }
-
-              final docs = snapshot.data!.docs.toList();
-              docs.sort((a, b) {
-                final ta = a.data()['timestamp'] as Timestamp?;
-                final tb = b.data()['timestamp'] as Timestamp?;
-                if (ta == null && tb == null) return 0;
-                if (ta == null) return 1;
-                if (tb == null) return -1;
-                return ta.compareTo(tb);
-              });
-
-              if (docs.isEmpty) {
-                return Text(
-                  'No hand-overs have been recorded for this batch yet.',
-                  style: AppTextStyles.body.copyWith(
-                    fontSize: 13,
-                    color: AppColors.textSecondary,
-                  ),
-                );
-              }
-
-              // Show the most recent four steps, oldest first.
-              final shown = docs.length > 4 ? docs.sublist(docs.length - 4) : docs;
-
-              return Column(
-                children: List.generate(shown.length, (i) {
-                  final data = shown[i].data();
-                  return _JourneyStep(
-                    label: _friendlyAction(data['action'] as String? ?? 'Event'),
-                    date: _formatDate(data['timestamp'] as Timestamp?),
-                    isLast: i == shown.length - 1,
-                  );
-                }),
-              );
-            },
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _JourneyStep extends StatelessWidget {
-  final String label;
-  final String date;
-  final bool isLast;
-
-  const _JourneyStep({required this.label, required this.date, required this.isLast});
-
-  @override
-  Widget build(BuildContext context) {
-    return IntrinsicHeight(
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Column(
-            children: [
-              Container(
-                width: 22,
-                height: 22,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: AppColors.primary,
-                ),
-                child: const Icon(Icons.check, size: 14, color: Colors.white),
-              ),
-              if (!isLast)
-                Expanded(
-                  child: Container(
-                    width: 2,
-                    color: AppColors.primary.withOpacity(0.35),
-                  ),
-                ),
-            ],
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Padding(
-              padding: EdgeInsets.only(bottom: isLast ? 0 : 16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    label,
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.bold,
-                      color: AppColors.textPrimary,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    date,
-                    style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ],
       ),
     );
   }
