@@ -210,6 +210,7 @@ class _TransferOfCustodyScreenState extends State<TransferOfCustodyScreen> {
           'status': action,
           'location': orgName,
           'organizationId': myOrgId,
+          if (toOrgId != null) 'toOrgId': toOrgId,
           'scannedAt': FieldValue.serverTimestamp(),
           'scannedBy': uid,
         });

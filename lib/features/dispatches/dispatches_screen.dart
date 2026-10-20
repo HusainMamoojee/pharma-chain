@@ -11,6 +11,8 @@ class DispatchRecord {
   final String batchCode;
   final String productName;
   final bool isOutgoing;
+  final bool isPending; // sent to us, receipt not confirmed yet
+  final String fromOrg;
   final DateTime? timestamp;
   final String? staffUid;
 
@@ -19,17 +21,33 @@ class DispatchRecord {
     required this.productName,
     required this.isOutgoing,
     required this.timestamp,
+    this.isPending = false,
+    this.fromOrg = '',
     this.staffUid,
   });
 
+  /// One of our own log entries: a transfer we sent, or a receipt we confirmed.
   factory DispatchRecord.fromDoc(QueryDocumentSnapshot<Map<String, dynamic>> doc) {
     final data = doc.data();
     final status = (data['status'] as String? ?? '').toLowerCase();
     return DispatchRecord(
       batchCode: data['lotNumber'] as String? ?? 'Unknown batch',
       productName: data['productName'] as String? ?? '',
-      // Initiate Transfer = we sent it out; Confirm Receipt = we received it.
       isOutgoing: !status.contains('receipt'),
+      timestamp: (data['scannedAt'] as Timestamp?)?.toDate(),
+      staffUid: data['scannedBy'] as String?,
+    );
+  }
+
+  /// A transfer another organisation sent to us.
+  factory DispatchRecord.incomingTransfer(QueryDocumentSnapshot<Map<String, dynamic>> doc, {required bool pending}) {
+    final data = doc.data();
+    return DispatchRecord(
+      batchCode: data['lotNumber'] as String? ?? 'Unknown batch',
+      productName: data['productName'] as String? ?? '',
+      isOutgoing: false,
+      isPending: pending,
+      fromOrg: data['location'] as String? ?? '',
       timestamp: (data['scannedAt'] as Timestamp?)?.toDate(),
       staffUid: data['scannedBy'] as String?,
     );
@@ -57,7 +75,8 @@ class DispatchesScreen extends StatefulWidget {
 class _DispatchesScreenState extends State<DispatchesScreen> {
   bool _showOutgoing = true;
   bool _orgLoaded = false;
-  Stream<QuerySnapshot<Map<String, dynamic>>>? _logsStream;
+  Stream<QuerySnapshot<Map<String, dynamic>>>? _myLogsStream;
+  Stream<QuerySnapshot<Map<String, dynamic>>>? _sentToMeStream;
 
   @override
   void initState() {
@@ -76,11 +95,10 @@ class _DispatchesScreenState extends State<DispatchesScreen> {
     setState(() {
       _orgLoaded = true;
       if (orgId != null) {
-        // Equality filter only, so no composite index is needed.
-        _logsStream = FirebaseFirestore.instance
-            .collection('scan_logs')
-            .where('organizationId', isEqualTo: orgId)
-            .snapshots();
+        // Equality filters only, so no composite index is needed.
+        final logs = FirebaseFirestore.instance.collection('scan_logs');
+        _myLogsStream = logs.where('organizationId', isEqualTo: orgId).snapshots();
+        _sentToMeStream = logs.where('toOrgId', isEqualTo: orgId).snapshots();
       }
     });
   }
@@ -99,126 +117,156 @@ class _DispatchesScreenState extends State<DispatchesScreen> {
       body: SafeArea(
         child: !_orgLoaded
             ? const Center(child: CircularProgressIndicator())
-            : _logsStream == null
+            : _myLogsStream == null
                 ? _centered('Your account is not linked to an organisation yet.')
                 : StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-                    stream: _logsStream,
-                    builder: (context, snapshot) {
-                      if (snapshot.connectionState == ConnectionState.waiting) {
-                        return const Center(child: CircularProgressIndicator());
-                      }
-                      if (snapshot.hasError) {
-                        return Center(
-                          child: Padding(
-                            padding: const EdgeInsets.all(24.0),
-                            child: SelectableText('Error loading dispatches:\n${snapshot.error}'),
-                          ),
-                        );
-                      }
+                    stream: _myLogsStream,
+                    builder: (context, mySnap) {
+                      return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                        stream: _sentToMeStream,
+                        builder: (context, inSnap) {
+                          if (mySnap.connectionState == ConnectionState.waiting ||
+                              inSnap.connectionState == ConnectionState.waiting) {
+                            return const Center(child: CircularProgressIndicator());
+                          }
+                          if (mySnap.hasError || inSnap.hasError) {
+                            return Center(
+                              child: Padding(
+                                padding: const EdgeInsets.all(24.0),
+                                child: SelectableText('Error loading dispatches:\n${mySnap.error ?? inSnap.error}'),
+                              ),
+                            );
+                          }
 
-                      final all = (snapshot.data?.docs ?? []).map(DispatchRecord.fromDoc).toList()
-                        ..sort((a, b) => (b.timestamp ?? DateTime(0)).compareTo(a.timestamp ?? DateTime(0)));
-                      final outgoingCount = all.where((d) => d.isOutgoing).length;
-                      final receivedCount = all.length - outgoingCount;
-                      final filtered = all.where((d) => d.isOutgoing == _showOutgoing).toList();
+                          final mine = (mySnap.data?.docs ?? []).map(DispatchRecord.fromDoc).toList();
+                          final outgoing = mine.where((d) => d.isOutgoing).toList();
+                          final receipts = mine.where((d) => !d.isOutgoing).toList();
 
-                      return Column(
-                        children: [
-                          Padding(
-                            padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Row(
+                          // A transfer sent to us is pending until we log a receipt for that batch after it.
+                          final pending = <DispatchRecord>[];
+                          for (final doc in inSnap.data?.docs ?? []) {
+                            final status = (doc.data()['status'] as String? ?? '').toLowerCase();
+                            if (status.contains('receipt')) continue;
+                            final sentAt = (doc.data()['scannedAt'] as Timestamp?)?.toDate() ?? DateTime.now();
+                            final lot = doc.data()['lotNumber'] as String? ?? '';
+                            final received = receipts.any(
+                              (r) => r.batchCode == lot && (r.timestamp ?? DateTime.now()).compareTo(sentAt) >= 0,
+                            );
+                            if (!received) pending.add(DispatchRecord.incomingTransfer(doc, pending: true));
+                          }
+
+                          int byTime(DispatchRecord a, DispatchRecord b) =>
+                              (b.timestamp ?? DateTime(0)).compareTo(a.timestamp ?? DateTime(0));
+                          outgoing.sort(byTime);
+                          final incoming = [...pending, ...receipts]..sort(byTime);
+
+                          final filtered = _showOutgoing ? outgoing : incoming;
+
+                          return Column(
+                            children: [
+                              Padding(
+                                padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    Container(
-                                      width: 40,
-                                      height: 40,
-                                      decoration: BoxDecoration(
-                                        color: AppColors.primary.withOpacity(0.10),
-                                        borderRadius: BorderRadius.circular(12),
-                                      ),
-                                      child: const Icon(Icons.local_shipping_outlined, color: AppColors.primary, size: 22),
+                                    Row(
+                                      children: [
+                                        Container(
+                                          width: 40,
+                                          height: 40,
+                                          decoration: BoxDecoration(
+                                            color: AppColors.primary.withOpacity(0.10),
+                                            borderRadius: BorderRadius.circular(12),
+                                          ),
+                                          child: const Icon(Icons.local_shipping_outlined, color: AppColors.primary, size: 22),
+                                        ),
+                                        const SizedBox(width: 10),
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            children: [
+                                              Text('WAREHOUSE FLOOR',
+                                                  style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 1.2, color: AppColors.textSecondary)),
+                                              Text('Dispatches', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: AppColors.textPrimary)),
+                                            ],
+                                          ),
+                                        ),
+                                        IconButton(
+                                          onPressed: () async {
+                                            await AuthService().signOut();
+                                            if (context.mounted) context.go('/staff-login');
+                                          },
+                                          icon: Icon(Icons.logout_rounded, color: AppColors.textPrimary),
+                                        ),
+                                      ],
                                     ),
-                                    const SizedBox(width: 10),
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                    const SizedBox(height: 14),
+                                    Container(
+                                      padding: const EdgeInsets.all(4),
+                                      decoration: BoxDecoration(
+                                        color: AppColors.surface,
+                                        borderRadius: BorderRadius.circular(12),
+                                        border: Border.all(color: AppColors.textSecondary.withOpacity(0.12)),
+                                      ),
+                                      child: Row(
                                         children: [
-                                          Text('WAREHOUSE FLOOR',
-                                              style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 1.2, color: AppColors.textSecondary)),
-                                          Text('Dispatches', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: AppColors.textPrimary)),
+                                          Expanded(child: _ToggleButton(label: 'Outgoing', isSelected: _showOutgoing, onTap: () => setState(() => _showOutgoing = true))),
+                                          Expanded(
+                                            child: _ToggleButton(
+                                              label: pending.isEmpty ? 'Incoming' : 'Incoming (${pending.length})',
+                                              isSelected: !_showOutgoing,
+                                              onTap: () => setState(() => _showOutgoing = false),
+                                            ),
+                                          ),
                                         ],
                                       ),
                                     ),
-                                    IconButton(
-                                      onPressed: () async {
-                                        await AuthService().signOut();
-                                        if (context.mounted) context.go('/staff-login');
-                                      },
-                                      icon: Icon(Icons.logout_rounded, color: AppColors.textPrimary),
+                                    const SizedBox(height: 16),
+                                    Row(
+                                      children: [
+                                        Expanded(child: _StatCard(label: 'Outgoing', value: '${outgoing.length}', color: AppColors.tertiary)),
+                                        const SizedBox(width: 10),
+                                        Expanded(child: _StatCard(label: 'Awaiting receipt', value: '${pending.length}', color: AppColors.danger)),
+                                        const SizedBox(width: 10),
+                                        Expanded(child: _StatCard(label: 'Received', value: '${receipts.length}', color: AppColors.primary)),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 16),
+                                    Row(
+                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                      children: [
+                                        Text(_showOutgoing ? 'Outgoing Dispatches' : 'Incoming Dispatches',
+                                            style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: AppColors.textPrimary)),
+                                        TextButton.icon(
+                                          onPressed: () => context.push('/staff-scan'),
+                                          icon: Icon(Icons.qr_code_scanner, size: 16, color: AppColors.primary),
+                                          label: Text('Start Transfer', style: TextStyle(fontSize: 12, color: AppColors.primary, fontWeight: FontWeight.bold)),
+                                        ),
+                                      ],
                                     ),
                                   ],
                                 ),
-                                const SizedBox(height: 14),
-                                Container(
-                                  padding: const EdgeInsets.all(4),
-                                  decoration: BoxDecoration(
-                                    color: AppColors.surface,
-                                    borderRadius: BorderRadius.circular(12),
-                                    border: Border.all(color: AppColors.textSecondary.withOpacity(0.12)),
-                                  ),
-                                  child: Row(
-                                    children: [
-                                      Expanded(child: _ToggleButton(label: 'Outgoing', isSelected: _showOutgoing, onTap: () => setState(() => _showOutgoing = true))),
-                                      Expanded(child: _ToggleButton(label: 'Received', isSelected: !_showOutgoing, onTap: () => setState(() => _showOutgoing = false))),
-                                    ],
-                                  ),
-                                ),
-                                const SizedBox(height: 16),
-                                Row(
-                                  children: [
-                                    Expanded(child: _StatCard(label: 'Total', value: '${all.length}', color: AppColors.textPrimary)),
-                                    const SizedBox(width: 10),
-                                    Expanded(child: _StatCard(label: 'Outgoing', value: '$outgoingCount', color: AppColors.tertiary)),
-                                    const SizedBox(width: 10),
-                                    Expanded(child: _StatCard(label: 'Received', value: '$receivedCount', color: AppColors.primary)),
-                                  ],
-                                ),
-                                const SizedBox(height: 16),
-                                Row(
-                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    Text(_showOutgoing ? 'Outgoing Dispatches' : 'Received Dispatches',
-                                        style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: AppColors.textPrimary)),
-                                    TextButton.icon(
-                                      onPressed: () => context.push('/staff-scan'),
-                                      icon: Icon(Icons.qr_code_scanner, size: 16, color: AppColors.primary),
-                                      label: Text('Start Transfer', style: TextStyle(fontSize: 12, color: AppColors.primary, fontWeight: FontWeight.bold)),
-                                    ),
-                                  ],
-                                ),
-                              ],
-                            ),
-                          ),
-                          Expanded(
-                            child: filtered.isEmpty
-                                ? Center(
-                                    child: Text(
-                                      _showOutgoing ? 'No outgoing dispatches yet.' : 'No received dispatches yet.',
-                                      style: TextStyle(color: AppColors.textSecondary),
-                                    ),
-                                  )
-                                : ListView.builder(
-                                    padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
-                                    itemCount: filtered.length,
-                                    itemBuilder: (context, index) => Padding(
-                                      padding: const EdgeInsets.only(bottom: 12),
-                                      child: _DispatchCard(record: filtered[index]),
-                                    ),
-                                  ),
-                          ),
-                        ],
+                              ),
+                              Expanded(
+                                child: filtered.isEmpty
+                                    ? Center(
+                                        child: Text(
+                                          _showOutgoing ? 'No outgoing dispatches yet.' : 'No incoming dispatches yet.',
+                                          style: TextStyle(color: AppColors.textSecondary),
+                                        ),
+                                      )
+                                    : ListView.builder(
+                                        padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+                                        itemCount: filtered.length,
+                                        itemBuilder: (context, index) => Padding(
+                                          padding: const EdgeInsets.only(bottom: 12),
+                                          child: _DispatchCard(record: filtered[index]),
+                                        ),
+                                      ),
+                              ),
+                            ],
+                          );
+                        },
                       );
                     },
                   ),
@@ -276,7 +324,7 @@ class _StatCard extends StatelessWidget {
         children: [
           Text(value, style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: color)),
           const SizedBox(height: 2),
-          Text(label, style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: AppColors.textSecondary)),
+          Text(label, style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: AppColors.textSecondary), maxLines: 1, overflow: TextOverflow.ellipsis),
         ],
       ),
     );
@@ -290,7 +338,10 @@ class _DispatchCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final statusColor = record.isOutgoing ? AppColors.tertiary : AppColors.primary;
+    final Color statusColor = record.isOutgoing
+        ? AppColors.tertiary
+        : (record.isPending ? AppColors.danger : AppColors.primary);
+    final String badge = record.isOutgoing ? 'Outgoing' : (record.isPending ? 'Awaiting receipt' : 'Received');
 
     return Container(
       padding: const EdgeInsets.all(14),
@@ -299,39 +350,66 @@ class _DispatchCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(16),
         boxShadow: [BoxShadow(color: AppColors.neutral.withOpacity(0.04), blurRadius: 8, offset: const Offset(0, 2))],
       ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(color: statusColor.withOpacity(0.12), borderRadius: BorderRadius.circular(10)),
-            child: Icon(record.isOutgoing ? Icons.north_east : Icons.south_west, color: statusColor, size: 20),
+          Row(
+            children: [
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(color: statusColor.withOpacity(0.12), borderRadius: BorderRadius.circular(10)),
+                child: Icon(record.isOutgoing ? Icons.north_east : Icons.south_west, color: statusColor, size: 20),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      record.productName.isEmpty ? record.batchCode : record.productName,
+                      style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
+                    ),
+                    const SizedBox(height: 2),
+                    if (record.isPending)
+                      Text(
+                        '${record.batchCode} • from ${record.fromOrg.isEmpty ? 'another organisation' : record.fromOrg} • ${record.timeInfo}',
+                        style: TextStyle(fontSize: 11, color: AppColors.textSecondary),
+                      )
+                    else
+                      StaffNameText(
+                        uid: record.staffUid,
+                        prefix: '${record.batchCode} • ',
+                        suffix: ' • ${record.timeInfo}',
+                        style: TextStyle(fontSize: 11, color: AppColors.textSecondary),
+                      ),
+                  ],
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                decoration: BoxDecoration(color: statusColor.withOpacity(0.12), borderRadius: BorderRadius.circular(12)),
+                child: Text(badge, style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: statusColor)),
+              ),
+            ],
           ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  record.productName.isEmpty ? record.batchCode : record.productName,
-                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
+          if (record.isPending) ...[
+            const SizedBox(height: 10),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: () => context.push('/custody-transfer', extra: record.batchCode),
+                icon: const Icon(Icons.check_circle_outline, size: 18),
+                label: const Text('Confirm receipt'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primary,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                 ),
-                const SizedBox(height: 2),
-                StaffNameText(
-                  uid: record.staffUid,
-                  prefix: '${record.batchCode} • ',
-                  suffix: ' • ${record.timeInfo}',
-                  style: TextStyle(fontSize: 11, color: AppColors.textSecondary),
-                ),
-              ],
+              ),
             ),
-          ),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-            decoration: BoxDecoration(color: statusColor.withOpacity(0.12), borderRadius: BorderRadius.circular(12)),
-            child: Text(record.isOutgoing ? 'Outgoing' : 'Received',
-                style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: statusColor)),
-          ),
+          ],
         ],
       ),
     );
