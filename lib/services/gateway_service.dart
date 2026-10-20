@@ -16,10 +16,13 @@ class GatewayService {
   GatewayService._();
   static final GatewayService instance = GatewayService._();
 
-  /// Set at build time:
+  /// Defaults to the hosted PharmaChain gateway, so a plain `flutter run` works.
+  /// To point at a local gateway instead:
   ///   flutter run --dart-define=GATEWAY_URL=http://192.168.x.x:3000
-  static const String baseUrl =
-      String.fromEnvironment('GATEWAY_URL', defaultValue: 'http://localhost:3000');
+  static const String baseUrl = String.fromEnvironment(
+    'GATEWAY_URL',
+    defaultValue: 'https://pharmachain-gw.southafricanorth.cloudapp.azure.com',
+  );
 
   Future<dynamic> _request(String method, String path, {Map<String, dynamic>? body}) async {
     final token = await FirebaseAuth.instance.currentUser?.getIdToken();
