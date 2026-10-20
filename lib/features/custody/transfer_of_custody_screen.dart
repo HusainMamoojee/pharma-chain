@@ -217,6 +217,22 @@ class _TransferOfCustodyScreenState extends State<TransferOfCustodyScreen> {
       } catch (e) {
         debugPrint('Could not save scan log: $e');
       }
+            // Mirror custody into Firestore so Inventory can show what each org holds.
+      // The ledger stays the source of truth.
+      try {
+        final myOrg = (await _stateFuture).myOrgId;
+        final batchRef = FirebaseFirestore.instance.collection('batches').doc(widget.batchCode);
+        if (action == 'Transfer initiated' && toOrgId != null) {
+          await batchRef.update({'inTransitTo': toOrgId});
+        } else if (action == 'Receipt confirmed' && myOrg != null) {
+          await batchRef.update({
+            'holderOrgId': myOrg,
+            'inTransitTo': FieldValue.delete(),
+          });
+        }
+      } catch (e) {
+        debugPrint('Could not update batch holder: $e');
+      }
 
       if (!mounted) return;
       setState(() => _isProcessing = false);
