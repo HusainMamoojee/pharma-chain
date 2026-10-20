@@ -1,4 +1,3 @@
-import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../../core/theme/app_colors.dart';
@@ -8,11 +7,13 @@ class OnboardingSlide {
   final IconData icon;
   final String title;
   final String description;
+  final Color accent;
 
   const OnboardingSlide({
     required this.icon,
     required this.title,
     required this.description,
+    required this.accent,
   });
 }
 
@@ -27,24 +28,27 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   final PageController _pageController = PageController();
   int _currentPage = 0;
 
-  final List<OnboardingSlide> _slides = const [
+  final List<OnboardingSlide> _slides = [
     OnboardingSlide(
       icon: Icons.verified_outlined,
       title: 'Verify Authenticity',
       description:
-          'Scan any medicine package to instantly confirm it\'s genuine, backed by blockchain records.',
+          'Scan any medicine package to instantly check it\'s genuine against the manufacturer\'s records.',
+      accent: AppColors.primary,
     ),
     OnboardingSlide(
-      icon: Icons.route_outlined,
+      icon: Icons.local_shipping_outlined,
       title: 'Track the Supply Chain',
       description:
           'Follow every step your medicine took — from manufacturer to pharmacy — in one transparent timeline.',
+      accent: AppColors.primary,
     ),
     OnboardingSlide(
-      icon: Icons.shield_outlined,
+      icon: Icons.flag_outlined,
       title: 'Report Counterfeits',
       description:
           'If something doesn\'t check out, flag it instantly and help protect your community.',
+      accent: AppColors.tertiary,
     ),
   ];
 
@@ -71,11 +75,13 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final isLast = _currentPage == _slides.length - 1;
+
     return Scaffold(
       backgroundColor: AppColors.background,
       body: Stack(
         children: [
-          // Soft decorative background blobs for the glassmorphism feel
+          // Soft decorative background blobs
           Positioned(
             top: -80,
             right: -60,
@@ -94,9 +100,16 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                   alignment: Alignment.topRight,
                   child: Padding(
                     padding: const EdgeInsets.all(16.0),
-                    child: TextButton(
-                      onPressed: _goToSelection,
-                      child: Text('Skip', style: AppTextStyles.label),
+                    child: AnimatedOpacity(
+                      opacity: isLast ? 0 : 1,
+                      duration: const Duration(milliseconds: 200),
+                      child: IgnorePointer(
+                        ignoring: isLast,
+                        child: TextButton(
+                          onPressed: _goToSelection,
+                          child: Text('Skip', style: AppTextStyles.label),
+                        ),
+                      ),
                     ),
                   ),
                 ),
@@ -125,7 +138,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                         ),
                       ),
                       child: Text(
-                        _currentPage == _slides.length - 1 ? 'Get Started' : 'Next',
+                        isLast ? 'Get Started' : 'Next',
                         style: AppTextStyles.label.copyWith(color: Colors.white),
                       ),
                     ),
@@ -154,21 +167,15 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          ClipRRect(
-            borderRadius: BorderRadius.circular(28),
-            child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
-              child: Container(
-                width: 160,
-                height: 160,
-                decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.35),
-                  borderRadius: BorderRadius.circular(28),
-                  border: Border.all(color: Colors.white.withOpacity(0.5)),
-                ),
-                child: Icon(slide.icon, size: 64, color: AppColors.primary),
-              ),
+          Container(
+            width: 160,
+            height: 160,
+            decoration: BoxDecoration(
+              color: slide.accent.withOpacity(0.15),
+              borderRadius: BorderRadius.circular(40),
+              border: Border.all(color: slide.accent.withOpacity(0.25)),
             ),
+            child: Icon(slide.icon, size: 72, color: slide.accent),
           ),
           const SizedBox(height: 40),
           Text(

@@ -63,10 +63,9 @@ class StaffDashboardScreen extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _WelcomeSection(name: name),
+            _WelcomeSection(name: name, email: user?.email ?? ''),
             const SizedBox(height: 16),
-            const _StatsRow(),
-            const SizedBox(height: 24),
+         
             const _ScanCtaCard(),
             const SizedBox(height: 24),
             const _RecentScansSection(),
@@ -86,12 +85,14 @@ class StaffDashboardScreen extends StatelessWidget {
 // ==========================================
 class _WelcomeSection extends StatelessWidget {
   final String name;
+  final String email;
 
-  const _WelcomeSection({required this.name});
+  const _WelcomeSection({required this.name, required this.email});
 
   @override
   Widget build(BuildContext context) {
     return Container(
+      width: double.infinity,
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: AppColors.surface,
@@ -103,59 +104,26 @@ class _WelcomeSection extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                decoration: BoxDecoration(
-                  color: AppColors.primary.withOpacity(0.15),
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Row(
-                  children: const [
-                    Icon(Icons.circle, size: 8, color: AppColors.primary),
-                    SizedBox(width: 6),
-                    Text('Node #041-ZA • Online & Synced',
-                      style: TextStyle(fontSize: 11, color: AppColors.primary, fontWeight: FontWeight.bold)),
-                  ],
-                ),
-              ),
-              const Icon(Icons.tune, color: AppColors.textSecondary, size: 20),
-            ],
-          ),
-          const SizedBox(height: 16),
           Text('Hello, $name', style: const TextStyle(fontSize: 22, color: AppColors.textPrimary, fontWeight: FontWeight.bold)),
           const SizedBox(height: 4),
           Row(
-            children: const [
-              Icon(Icons.store, size: 14, color: AppColors.textSecondary),
-              SizedBox(width: 6),
-              Text('Logistics • Bay 4 (Gauteng Central Depot)',
-                style: TextStyle(color: AppColors.textSecondary, fontSize: 13)),
+            children: [
+              const Icon(Icons.mail_outline, size: 14, color: AppColors.textSecondary),
+              const SizedBox(width: 6),
+              Flexible(
+                child: Text(email,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(color: AppColors.textSecondary, fontSize: 13)),
+              ),
             ],
-          ),
-          const SizedBox(height: 20),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: const [
-              Text('Shift Target', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textSecondary)),
-              Text('86 / 100 Verified (86%)', style: TextStyle(fontSize: 13, color: AppColors.textPrimary, fontWeight: FontWeight.bold)),
-            ],
-          ),
-          const SizedBox(height: 8),
-          LinearProgressIndicator(
-            value: 0.86,
-            backgroundColor: AppColors.background,
-            color: AppColors.primary,
-            minHeight: 6,
-            borderRadius: BorderRadius.circular(4),
           ),
         ],
       ),
     );
   }
 }
+
+
 
 // ==========================================
 // 2. STATS ROW SECTION (Firestore-driven, with graceful fallback)
@@ -308,10 +276,10 @@ class _ScanCtaCard extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 16),
-          const Text('High-Speed Floor Scan', style: TextStyle(fontSize: 18, color: AppColors.textPrimary, fontWeight: FontWeight.bold)),
+          const Text('Scan a batch', style: TextStyle(fontSize: 18, color: AppColors.textPrimary, fontWeight: FontWeight.bold)),
           const SizedBox(height: 8),
           const Text(
-            'Aim at master carton GS1 DataMatrix or\nindividual vial tamper seal',
+            'Point the camera at a batch QR code\nto verify it against the ledger',
             textAlign: TextAlign.center,
             style: TextStyle(fontSize: 13, color: AppColors.textSecondary, height: 1.4),
           ),
@@ -323,8 +291,8 @@ class _ScanCtaCard extends StatelessWidget {
               onPressed: () {
                 context.push('/staff-scan');
               },
-              icon: const Icon(Icons.barcode_reader, color: AppColors.textPrimary),
-              label: const Text('Scan Package Now', style: TextStyle(fontSize: 16, color: AppColors.textPrimary, fontWeight: FontWeight.bold)),
+              icon: const Icon(Icons.qr_code_scanner, color: AppColors.textPrimary),
+              label: const Text('Scan QR Code ', style: TextStyle(fontSize: 16, color: AppColors.textPrimary, fontWeight: FontWeight.bold)),
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppColors.tertiary,
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
