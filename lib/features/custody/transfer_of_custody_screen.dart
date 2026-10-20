@@ -181,16 +181,35 @@ class _TransferOfCustodyScreenState extends State<TransferOfCustodyScreen> {
         await GatewayService.instance.confirmReceipt(widget.batchCode);
       }
 
-      // Keep the staff dashboard's recent-scans list working.
+        // Keep the staff dashboard's recent-scans list working.
       try {
         final uid = FirebaseAuth.instance.currentUser?.uid;
-        final batchDoc = await FirebaseFirestore.instance.collection('batches').doc(widget.batchCode).get();
-        final productName = batchDoc.data()?['productName'] as String? ?? widget.batchCode;
+        final state = await _stateFuture;
+        final myOrgId = state.myOrgId;
+
+        // Real organisation name, instead of a made-up depot.
+        String orgName = '';
+        if (myOrgId != null) {
+          final orgSnap = await FirebaseFirestore.instance
+              .collection('stakeholders')
+              .doc(myOrgId)
+              .get();
+          orgName = orgSnap.data()?['organizationName'] as String? ?? '';
+        }
+
+        final batchDoc = await FirebaseFirestore.instance
+            .collection('batches')
+            .doc(widget.batchCode)
+            .get();
+        final productName =
+            batchDoc.data()?['productName'] as String? ?? widget.batchCode;
+
         await FirebaseFirestore.instance.collection('scan_logs').add({
           'productName': productName,
           'lotNumber': widget.batchCode,
           'status': action,
-          'location': 'Bay 4 (Gauteng Central Depot)',
+          'location': orgName,
+          'organizationId': myOrgId,
           'scannedAt': FieldValue.serverTimestamp(),
           'scannedBy': uid,
         });
