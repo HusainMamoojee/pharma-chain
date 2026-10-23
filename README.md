@@ -115,6 +115,3 @@ lib/
 - Batch recall alerts and expiry notifications
 - Tighter Firestore rules and managed secrets
 
-## Licence
-
-Academic project. Add a licence here if the repository will be shared publicly.
