@@ -11,7 +11,7 @@ class DispatchRecord {
   final String batchCode;
   final String productName;
   final bool isOutgoing;
-  final bool isPending; // sent to us, receipt not confirmed yet
+  final bool isPending; 
   final String fromOrg;
   final DateTime? timestamp;
   final String? staffUid;
@@ -95,7 +95,7 @@ class _DispatchesScreenState extends State<DispatchesScreen> {
     setState(() {
       _orgLoaded = true;
       if (orgId != null) {
-        // Equality filters only, so no composite index is needed.
+        
         final logs = FirebaseFirestore.instance.collection('scan_logs');
         _myLogsStream = logs.where('organizationId', isEqualTo: orgId).snapshots();
         _sentToMeStream = logs.where('toOrgId', isEqualTo: orgId).snapshots();
