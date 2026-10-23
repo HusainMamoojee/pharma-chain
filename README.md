@@ -4,7 +4,7 @@ A mobile app that lets patients check whether a medicine batch is genuine, and l
 
 Final-year project, Eduvos ITMDA3 (Faculty of Information Technology).
 
-**Team:** Husain Mamoojee, [Team member 2], [Team member 3]
+
 
 ## What it does
 
