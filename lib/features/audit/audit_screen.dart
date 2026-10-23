@@ -96,7 +96,7 @@ class _AuditScreenState extends State<AuditScreen> {
       _orgId = orgId;
       _orgLoaded = true;
       if (orgId != null) {
-        // Equality filter only, so no composite index is needed.
+       
         _logsStream = FirebaseFirestore.instance
             .collection('scan_logs')
             .where('organizationId', isEqualTo: orgId)
