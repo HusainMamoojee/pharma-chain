@@ -150,9 +150,7 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // ---------------------------------------------------------------
-  // TOP BAR
-  // ---------------------------------------------------------------
+ //top bar section
 
   Widget _buildTopBar(String name) {
     return Row(
@@ -192,9 +190,6 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // ---------------------------------------------------------------
-  // SCAN CARD
-  // ---------------------------------------------------------------
 
   Widget _buildScanCard(BuildContext context) {
     return Container(
@@ -279,10 +274,6 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // ---------------------------------------------------------------
-  // RECENT VERIFICATIONS
-  // ---------------------------------------------------------------
-
   Widget _buildRecentHeader(BuildContext context) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -310,7 +301,7 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  /// The user's most recent verifications, live from Firestore.
+  /// The user's most recent verifications
   Widget _buildLiveSections(BuildContext context) {
     final stream = _verificationsStream;
     if (stream == null) {
@@ -379,9 +370,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 }
 
-// =================================================================
-// VERIFICATION CARD (live data from the verifications collection)
-// =================================================================
+//verification card widget
 
 class _VerificationCard extends StatelessWidget {
   final Map<String, dynamic> data;

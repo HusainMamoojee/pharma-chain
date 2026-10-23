@@ -132,7 +132,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
         _orgNames[d.id] = d.data()['organizationName'] as String? ?? d.id;
       }
     } catch (_) {
-      // Names are cosmetic; the list still works without them.
+     
     }
 
     if (!mounted) return;
@@ -140,7 +140,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
       _orgId = orgId;
       _loaded = true;
       if (orgId != null) {
-        // Equality filters only, so no composite index is needed.
+        
         _mintedByMeStream = db.collection('batches').where('organizationId', isEqualTo: orgId).snapshots();
         _heldByMeStream = db.collection('batches').where('holderOrgId', isEqualTo: orgId).snapshots();
       }

@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 class AppColors {
   AppColors._();
 
-  // Figma design system colors
+  //  design system colors
   static const Color primary = Color(0xFF7FB5A8);   // sage teal
   static const Color secondary = Color(0xFFFAF7F2);  // warm cream
   static const Color tertiary = Color(0xFFF4A896);   // coral/salmon
